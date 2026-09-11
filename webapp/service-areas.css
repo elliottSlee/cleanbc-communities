@@ -1,0 +1,291 @@
+/* Service-area selector. Loaded after styles.css, which owns the tokens, the
+   shell (.app / .sidebar / .map-wrap), the theme button and the map chrome.
+   Everything here is specific to picking basins. */
+
+:root {
+  --sidebar-w: 400px;
+  --c-road: var(--c-other);
+  --c-ferry: var(--c-indigenous);
+  --c-pass: var(--c-municipality);
+  --c-remote: #8b5cf6;
+}
+:root[data-theme="dark"], :root:not([data-theme="light"]) {
+  --c-remote: #a78bfa;
+}
+
+.sa-h {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.sa-crumb {
+  margin-left: auto;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-2);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.sa-crumb:hover { color: var(--text); }
+
+/* ---------- Summary ---------- */
+.sa-summary {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.sa-summary__row {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.sa-summary__num {
+  font-size: 18px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+.sa-summary__unit {
+  font-size: 11.5px;
+  color: var(--text-2);
+  margin-right: 8px;
+}
+.sa-summary__hint {
+  margin: 4px 0 0;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+/* ---------- Barrier toggles ---------- */
+.sa-barriers {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.sa-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 6px 0;
+  cursor: pointer;
+}
+.sa-toggle input { position: absolute; opacity: 0; pointer-events: none; }
+.sa-toggle__box {
+  flex: none;
+  width: 28px; height: 16px;
+  margin-top: 2px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  border: 1px solid var(--border-strong);
+  position: relative;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.sa-toggle__box::after {
+  content: "";
+  position: absolute;
+  inset: 1px auto 1px 1px;
+  width: 12px;
+  border-radius: 999px;
+  background: var(--text-3);
+  transition: transform 0.12s ease, background 0.12s ease;
+}
+.sa-toggle input:checked + .sa-toggle__box { background: var(--text); border-color: var(--text); }
+.sa-toggle input:checked + .sa-toggle__box::after { transform: translateX(12px); background: var(--panel); }
+.sa-toggle input:focus-visible + .sa-toggle__box { outline: 2px solid var(--text); outline-offset: 2px; }
+.sa-toggle__text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.sa-toggle__text strong { font-size: 12.5px; font-weight: 500; }
+.sa-toggle__text em {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--text-3);
+  line-height: 1.35;
+}
+.sa-toggle__n {
+  margin-left: auto;
+  flex: none;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+  padding-top: 2px;
+}
+
+.sa-search { border-bottom: 1px solid var(--border); }
+
+/* ---------- Tree ---------- */
+.sa-tree {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px 0 12px;
+}
+
+.sa-region { border-bottom: 1px solid var(--border); }
+.sa-region:last-child { border-bottom: 0; }
+
+.sa-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 16px 7px 8px;
+  text-align: left;
+}
+.sa-row:hover { background: var(--hover); }
+
+.sa-disclose {
+  flex: none;
+  width: 20px; height: 20px;
+  display: grid; place-items: center;
+  border: 0; background: none; padding: 0;
+  color: var(--text-3);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+.sa-disclose:hover { color: var(--text); background: var(--active); }
+.sa-disclose svg { transition: transform 0.12s ease; }
+.sa-disclose[aria-expanded="true"] svg { transform: rotate(90deg); }
+
+/* A tri-state checkbox. `indeterminate` is set from script when some but not
+   all of a basin's places are in, which is what "unchecked one sub-locale"
+   has to look like. */
+.sa-box {
+  flex: none;
+  width: 15px; height: 15px;
+  margin: 0;
+  accent-color: var(--text);
+  cursor: pointer;
+}
+.sa-box:disabled { cursor: not-allowed; opacity: 0.35; }
+
+.sa-label {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+  flex: 1;
+  cursor: pointer;
+}
+.sa-label--off { cursor: not-allowed; color: var(--text-3); }
+
+.sa-name {
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sa-region > .sa-row .sa-name { font-weight: 600; font-size: 13px; }
+.sa-sub {
+  font-size: 11px;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.sa-meta {
+  margin-left: auto;
+  flex: none;
+  font-size: 11px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.sa-tag {
+  flex: none;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding: 1px 5px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  opacity: 0.85;
+}
+.sa-tag--ferry { color: var(--c-ferry); }
+.sa-tag--pass { color: var(--c-pass); }
+.sa-tag--remote { color: var(--c-remote); }
+
+.sa-basins { padding-bottom: 4px; }
+.sa-basin > .sa-row { padding-left: 26px; }
+.sa-basin__note {
+  margin: -2px 0 6px;
+  padding: 0 16px 0 71px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-3);
+}
+.sa-places {
+  padding: 2px 0 8px;
+  margin: 0 16px 6px 71px;
+  border-left: 1px solid var(--border);
+  max-height: 320px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.sa-place {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 8px 3px 10px;
+}
+.sa-place:hover { background: var(--hover); }
+.sa-place .sa-name { font-size: 11.5px; }
+.sa-place .sa-meta { font-size: 10.5px; }
+.sa-place--hub .sa-name { font-weight: 600; }
+
+.sa-empty { padding: 24px 16px; color: var(--text-3); font-size: 12px; }
+
+/* ---------- Actions ---------- */
+.sa-actions {
+  display: flex;
+  gap: 6px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+}
+.sa-btn {
+  flex: 1;
+  padding: 7px 10px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.sa-btn:hover { background: var(--active); }
+.sa-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.sa-btn--primary {
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--panel);
+}
+.sa-btn--primary:hover { opacity: 0.88; background: var(--text); }
+
+/* ---------- Detail card ---------- */
+.sa-detail .detail__eyebrow { color: var(--text-3); }
+.sa-detail__take { width: 100%; margin-top: 12px; flex: none; }
+
+/* ---------- Legend ---------- */
+.legend__swatch {
+  display: inline-block;
+  width: 9px; height: 9px;
+  border-radius: 999px;
+  margin-right: 6px;
+  vertical-align: -1px;
+}
+
+/* ---------- Narrow screens ---------- */
+/* styles.css already stacks the shell at 760px and puts the map on top. The
+   sidebar becomes the lower pane, so the tree needs its own scroll back and
+   the nested place list has to stop eating the whole pane. */
+@media (max-width: 760px) {
+  .sa-tree { min-height: 0; }
+  .sa-places { max-height: 200px; margin-left: 52px; }
+  .sa-basin__note { padding-left: 52px; }
+  .sa-toggle__text em { display: none; }
+  .sa-actions { position: sticky; bottom: 0; }
+}

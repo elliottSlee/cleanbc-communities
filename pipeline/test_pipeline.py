@@ -22,6 +22,8 @@ CSD_ZIP = os.path.join(HERE, "data", "lcsd000b21a_e.zip")
 CENSUS = os.path.join(HERE, "data", "census_population.csv")
 OUTPUT = os.path.join(HERE, "out", "geoname_population.csv")
 SHORTLIST = os.path.join(HERE, "out", "geoname_shortlist.csv")
+BASINS_CSV = os.path.join(HERE, "out", "geoname_basins.csv")
+SERVICE_JSON = os.path.join(HERE, "out", "service_areas.json")
 XLSX = os.path.join(os.path.dirname(HERE), "pop_municipal_subprov_areas.xlsx")
 ESTIMATES = os.path.join(HERE, "data", "municipal_estimates.csv")
 
@@ -965,6 +967,193 @@ class TestMunicipalEstimates(unittest.TestCase):
         self.assertGreaterEqual(max(years), "2025")
         for uid, _, name, _, counts in self.places:
             self.assertIn("2021", counts, name)
+
+
+class TestCommuteBasins(unittest.TestCase):
+    """The basin tables in 06_basins.py are hand-authored geography, so the
+    checks here are the ones a reader cannot do by eye: that the tables refer
+    only to things that exist, that every place lands somewhere, and that the
+    barrier rules actually fire on the cases the design turns on."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.mod = _load("06_basins.py", "step6")
+
+    def test_tables_are_internally_consistent(self):
+        m = self.mod
+        regions = {k for k, _ in m.REGIONS}
+        keys = [b["key"] for b in m.BASINS]
+        self.assertEqual(len(keys), len(set(keys)), "duplicate basin key")
+        for b in m.BASINS:
+            self.assertIn(b["region"], regions, b["key"])
+            self.assertIn(b["access"], m.ACCESS_LEVELS, b["key"])
+            self.assertTrue(b["note"], f"{b['key']} has no note")
+            for cd in b["cds"]:
+                self.assertIn(cd, m.CD_NAMES, b["key"])
+        for z in m.ZONES:
+            self.assertIn(z["basin"], keys, z["key"])
+            self.assertIn(z["access"], m.ACCESS_LEVELS, z["key"])
+            self.assertTrue(z["names"] or z["boxes"], f"{z['key']} claims nothing")
+        for name, (key, why) in m.OVERRIDES.items():
+            self.assertIn(key, keys, name)
+            self.assertTrue(why, f"override {name} has no reason")
+
+    def test_every_region_offers_three_to_seven_basins(self):
+        """The UI expands a region into a list a contractor reads at a glance.
+        One basin makes the region pointless; more than seven is the list the
+        design exists to avoid."""
+        m = self.mod
+        counts = {}
+        for b in m.BASINS:
+            counts[b["region"]] = counts.get(b["region"], 0) + 1
+        for key, label in m.REGIONS:
+            n = counts.get(key, 0)
+            self.assertGreaterEqual(n, 2, f"{label} has {n} basins")
+            self.assertLessEqual(n, 7, f"{label} has {n} basins")
+
+    @unittest.skipUnless(os.path.exists(OUTPUT), "no join output")
+    def test_every_hub_resolves_to_one_place(self):
+        m = self.mod
+        places = m.load_places(OUTPUT)
+        hubs = m.resolve_hubs(places)          # raises on a typo
+        self.assertEqual(len(hubs), len(m.BASINS))
+        ids = [h["id"] for h in hubs.values()]
+        self.assertEqual(len(ids), len(set(ids)), "two basins share a hub")
+
+    @unittest.skipUnless(os.path.exists(OUTPUT), "no join output")
+    def test_every_place_lands_in_exactly_one_basin(self):
+        m = self.mod
+        places = m.load_places(OUTPUT)
+        rows = m.assign(places, m.resolve_hubs(places))
+        self.assertEqual(len(rows), len(places))
+        self.assertEqual(len({r["id"] for r in rows}), len(rows))
+        keys = {b["key"] for b in m.BASINS}
+        for r in rows:
+            self.assertIn(r["basin"], keys, r["name"])
+
+    @unittest.skipUnless(os.path.exists(OUTPUT), "no join output")
+    def test_no_basin_is_empty(self):
+        """A basin nothing lands in is a hub in the wrong census division."""
+        m = self.mod
+        places = m.load_places(OUTPUT)
+        rows = m.assign(places, m.resolve_hubs(places))
+        got = {r["basin"] for r in rows}
+        self.assertEqual(sorted({b["key"] for b in m.BASINS} - got), [])
+
+    @unittest.skipUnless(os.path.exists(OUTPUT), "no join output")
+    def test_the_examples_the_design_is_built_on(self):
+        """Straight from the brief. Each of these is a case where straight-line
+        distance gives the wrong answer, so each is worth asserting."""
+        m = self.mod
+        places = m.load_places(OUTPUT)
+        rows = m.assign(places, m.resolve_hubs(places))
+        by_name = {}
+        for r in rows:
+            by_name.setdefault(r["name"], []).append(r)
+        basin = {b["key"]: b for b in m.BASINS}
+
+        def one(name, cd=None):
+            cands = by_name[name]
+            if cd:
+                cands = [c for c in cands if c["cd"] == cd]
+            self.assertEqual(len(cands), 1, name)
+            return cands[0]
+
+        # A basin auto-covers its hub and the unincorporated places round it,
+        # including the ones no municipal list contains.
+        for name in ("Courtenay", "Comox", "Cumberland", "Royston",
+                     "Merville", "Black Creek"):
+            self.assertEqual(one(name, "5926")["basin"], "comox-valley", name)
+        for name in ("Kelowna", "West Kelowna, City of", "Lake Country",
+                     "Peachland"):
+            self.assertEqual(one(name)["basin"], "kelowna", name)
+
+        # Unincorporated locales the municipal list drops entirely.
+        self.assertEqual(one("Errington")["basin"], "oceanside")
+        self.assertEqual(one("Roberts Creek")["basin"], "sechelt")
+
+        # Ferry sub-locales sit inside their basin but carry the sailing, so a
+        # contractor who takes the Comox Valley does not get Hornby with it.
+        for name in ("Hornby Island", "Denman Island"):
+            r = one(name)
+            self.assertEqual(r["basin"], "comox-valley", name)
+            self.assertEqual(r["access"], m.FERRY, name)
+        r = one("Bowen Island")
+        self.assertEqual((r["basin"], r["access"]), ("north-shore", m.FERRY))
+
+        # The case the brief names: from Victoria, neither Salt Spring nor
+        # Duncan comes along for the ride.
+        self.assertEqual(one("Victoria")["basin"], "victoria")
+        self.assertEqual(basin["victoria"]["access"], m.ROAD)
+        self.assertEqual(one("Ganges")["basin"], "gulf-islands-south")
+        self.assertEqual(basin["gulf-islands-south"]["access"], m.FERRY)
+        self.assertEqual(one("Duncan")["basin"], "cowichan")
+        self.assertEqual(basin["cowichan"]["access"], m.PASS)
+
+        # Castlegar works with Trail across a regional district boundary.
+        self.assertEqual(one("Castlegar")["basin"], "trail-castlegar")
+
+    @unittest.skipUnless(os.path.exists(OUTPUT), "no join output")
+    def test_nothing_is_offered_as_a_drive_that_cannot_be_one(self):
+        """The invariant the whole design rests on. Great-circle km is not
+        drive time, but nothing 120 km away in a straight line is a 45-60
+        minute corridor whatever the road does, so every such place has to be
+        tagged ferry, pass or remote - never left as an ordinary drive a
+        contractor gets without asking for it."""
+        m = self.mod
+        places = m.load_places(OUTPUT)
+        rows = m.assign(places, m.resolve_hubs(places))
+        bad = [(r["name"], r["basin"], r["km"]) for r in rows
+               if r["access"] == m.ROAD and r["km"] > m.DISTANT_KM]
+        self.assertEqual(bad, [])
+
+    @unittest.skipUnless(os.path.exists(OUTPUT), "no join output")
+    def test_the_coast_is_not_mistaken_for_a_road(self):
+        """Ninety-odd Tsimshian, Gitga'at, Haisla, Heiltsuk and Kitasoo
+        communities sit on fjords and islands with no road to them. Distance
+        alone reads them as a long drive up a channel, which is the one error
+        in this file that would put a contractor on a wharf with no boat."""
+        m = self.mod
+        places = m.load_places(OUTPUT)
+        rows = m.assign(places, m.resolve_hubs(places))
+        by_name = {}
+        for r in rows:
+            by_name.setdefault(r["name"], []).append(r)
+        boat_only = ["Metlakatla", "Lax Kw'alaams", "Kitkatla", "Hartley Bay",
+                     "Dodge Cove", "Oona River", "Kemano", "Klemtu",
+                     "Ocean Falls", "Shearwater", "Oweekeno", "Tallheo"]
+        for name in boat_only:
+            rows_ = by_name.get(name, [])
+            self.assertTrue(rows_, f"{name} is missing from the source")
+            for r in rows_:
+                self.assertIn(r["access"], (m.FERRY, m.REMOTE),
+                              f"{name} is offered as a drive")
+        # And the road that is a road stays one.
+        for name in ("Prince Rupert", "Port Edward", "Terrace", "Kitimat",
+                     "Bella Coola", "Hagensborg"):
+            self.assertEqual(by_name[name][0]["access"], m.ROAD, name)
+
+    @unittest.skipUnless(os.path.exists(BASINS_CSV), "no basins output")
+    def test_csv_and_json_agree(self):
+        import csv as _csv
+        import json as _json
+        with open(BASINS_CSV, encoding="utf-8", newline="") as f:
+            rows = list(_csv.DictReader(f))
+        with open(SERVICE_JSON, encoding="utf-8") as f:
+            doc = _json.load(f)
+        self.assertEqual(len(rows), len(doc["places"]))
+        idx = {k: i for i, k in enumerate(doc["fields"])}
+        seen = {p[idx["id"]]: p for p in doc["places"]}
+        for r in rows:
+            p = seen[int(r["geoname_id"])]
+            self.assertEqual(p[idx["basin"]], r["basin"], r["bc_geographic_name"])
+            self.assertEqual(p[idx["access"]], r["place_access"])
+        # Every basin the page can offer has somewhere to put its dot.
+        for b in doc["basins"]:
+            self.assertTrue(b["places"] >= 1, b["key"])
+            self.assertIsInstance(b["lat"], float)
+        listed = {k for r in doc["regions"] for k in r["basins"]}
+        self.assertEqual(listed, {b["key"] for b in doc["basins"]})
 
 
 if __name__ == "__main__":

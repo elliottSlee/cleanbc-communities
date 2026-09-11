@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Service Areas · CleanBC Communities</title>
+  <meta name="description" content="Pick a contractor service area by commute basin rather than by municipality: 16 macro regions, 76 basins, and every one of BC's 3,216 places inside one of them." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/5.6.0/maplibre-gl.min.css" />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="service-areas.css" />
+  <script>
+    // Apply the saved theme before first paint so there is no flash.
+    try {
+      var t = localStorage.getItem('cbc-theme');
+      if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+    } catch (e) {}
+  </script>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <header class="sidebar__header">
+        <div class="brand">
+          <span class="brand__mark" aria-hidden="true"></span>
+          <span class="brand__name">Service areas</span>
+          <a class="sa-crumb" href="./">All places →</a>
+        </div>
+        <p class="brand__sub">
+          Where will you travel to work? Pick commute basins, not municipalities.
+        </p>
+      </header>
+
+      <section class="sa-summary" aria-live="polite">
+        <div class="sa-summary__row">
+          <span class="sa-summary__num" id="sum-basins">0</span>
+          <span class="sa-summary__unit">basins</span>
+          <span class="sa-summary__num" id="sum-places">0</span>
+          <span class="sa-summary__unit">places</span>
+          <span class="sa-summary__num" id="sum-pop">0</span>
+          <span class="sa-summary__unit">people</span>
+        </div>
+        <p class="sa-summary__hint" id="sum-hint">Nothing selected yet.</p>
+      </section>
+
+      <section class="sa-barriers" aria-label="Travel a contractor has to opt into">
+        <h2 class="sa-h">Will you travel this way?</h2>
+        <label class="sa-toggle">
+          <input type="checkbox" id="t-ferry" />
+          <span class="sa-toggle__box" aria-hidden="true"></span>
+          <span class="sa-toggle__text">
+            <strong>Ferries &amp; water access</strong>
+            <em>Bowen, the Gulf Islands, Haida Gwaii, the Sunshine Coast hops</em>
+          </span>
+          <span class="sa-toggle__n" id="n-ferry">—</span>
+        </label>
+        <label class="sa-toggle">
+          <input type="checkbox" id="t-pass" />
+          <span class="sa-toggle__box" aria-hidden="true"></span>
+          <span class="sa-toggle__text">
+            <strong>Mountain passes &amp; corridors</strong>
+            <em>The Malahat, the Coquihalla, Allison Pass, Rogers Pass</em>
+          </span>
+          <span class="sa-toggle__n" id="n-pass">—</span>
+        </label>
+        <label class="sa-toggle">
+          <input type="checkbox" id="t-remote" />
+          <span class="sa-toggle__box" aria-hidden="true"></span>
+          <span class="sa-toggle__text">
+            <strong>Resource roads &amp; fly-in</strong>
+            <em>Tsay Keh Dene, Kwadacha, the Sustut, Gwaii Haanas</em>
+          </span>
+          <span class="sa-toggle__n" id="n-remote">—</span>
+        </label>
+      </section>
+
+      <div class="search sa-search">
+        <svg class="search__icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="search" class="search__input" type="search" placeholder="Find a place or a basin" autocomplete="off" spellcheck="false" />
+        <kbd class="search__kbd">/</kbd>
+      </div>
+
+      <div class="sa-tree" id="tree">
+        <div class="list__state" id="tree-state">Loading…</div>
+      </div>
+
+      <footer class="sa-actions">
+        <button class="sa-btn" id="clear" type="button">Clear</button>
+        <button class="sa-btn" id="copy-link" type="button">Copy link</button>
+        <button class="sa-btn sa-btn--primary" id="download" type="button">Download CSV</button>
+      </footer>
+    </aside>
+
+    <main class="map-wrap">
+      <div id="map" class="map" role="application" aria-label="Map of the selected service area"></div>
+
+      <button id="theme" class="icon-btn theme-btn" type="button" aria-label="Toggle theme" title="Toggle theme">
+        <svg class="icon-sun" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+        <svg class="icon-moon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg>
+      </button>
+
+      <div class="legend" id="legend" aria-label="Legend"></div>
+
+      <section class="detail sa-detail" id="detail" hidden aria-live="polite">
+        <button class="icon-btn detail__close" id="detail-close" type="button" aria-label="Close">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+        <div class="detail__eyebrow" id="d-region"></div>
+        <h2 class="detail__name" id="d-name"></h2>
+        <div class="detail__hero">
+          <span class="detail__num" id="d-pop"></span>
+          <span class="detail__unit">people</span>
+          <span class="pill" id="d-access"></span>
+        </div>
+        <p class="detail__note" id="d-note"></p>
+        <dl class="detail__grid" id="d-grid"></dl>
+        <button class="sa-btn sa-btn--primary sa-detail__take" id="d-take" type="button">Add this basin</button>
+      </section>
+    </main>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/5.6.0/maplibre-gl.min.js"></script>
+  <script src="service-areas.js"></script>
+</body>
+</html>

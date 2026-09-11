@@ -1,9 +1,9 @@
 # Geoname -> population pipeline. Pure stdlib Python 3.10+; no pip install.
 PY ?= python3
 
-.PHONY: all points census municipal boundaries join shortlist test clean clean-all progress
+.PHONY: all points census municipal boundaries join shortlist basins basin-report test clean clean-all progress
 
-all: points census municipal boundaries join shortlist
+all: points census municipal boundaries join shortlist basins
 
 points:            ## fetch a coordinate per Geonames.csv row (resumable)
 	$(PY) 01_fetch_points.py --workers 6
@@ -22,6 +22,12 @@ join:              ## produce out/geoname_population.csv
 
 shortlist:         ## reduce to out/geoname_shortlist.csv (primary, non-trivial)
 	$(PY) 05_shortlist.py
+
+basins:            ## group every place into a commute basin for the selector
+	$(PY) 06_basins.py
+
+basin-report:      ## every basin's members, farthest from the hub first
+	$(PY) 06_basins.py --report
 
 test:              ## projection, geometry, parsing and output checks
 	$(PY) test_pipeline.py

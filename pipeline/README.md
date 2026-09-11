@@ -299,6 +299,91 @@ forgotten.
 be re-examined without rerunning the join. `--min-population` changes the
 threshold, which is exclusive.
 
+## Commute basins
+
+`06_basins.py` answers a different question from the rest of the pipeline:
+not *how many people live here* but *would a contractor drive to it*.
+
+BC's official boundaries are the wrong shape for that. Regional districts are
+too big — Peace River is larger than Austria — and municipalities are too
+small, because most of the province's inhabited places are unincorporated and
+belong to no municipality at all. A contractor asked to tick municipalities
+cannot say "the Comox Valley"; asked to tick regional districts, they commit
+to a fifth of the province. Errington, Roberts Creek, Merville and Royston are
+in none of the 162 municipalities and are exactly the places the question is
+about.
+
+So the step lays a third geography over the join's output: **16 macro regions
+and 76 commute basins**, each a driving corridor around one commercial hub,
+with every one of the 3,216 geonames in exactly one of them.
+
+    make basins          # writes out/geoname_basins.csv and out/service_areas.json
+    make basin-report    # every basin's members, farthest from the hub first
+
+### The four tables are the model
+
+Everything else is derived, and the tables are meant to be edited.
+
+- **`REGIONS`** — the macro regions, in the order the UI shows them.
+- **`BASINS`** — one per hub. `hub` names a row of the source CSV and the
+  coordinates come from that row, so no coordinate is typed by hand and a
+  misspelled hub stops the run instead of putting a dot in the ocean. `access`
+  is how the basin is reached from the rest of its region: the Malahat on
+  Cowichan, a sailing on Salt Spring. `closed` keeps a basin out of the
+  distance competition entirely.
+- **`ZONES`** — the barriers: sets of places on the far side of water, a pass,
+  or the end of the road, by exact name or by bounding box. A zone overrides
+  distance when assigning its places, and stamps them with the access a
+  contractor has to opt into.
+- **`OVERRIDES`** — the handful of places no rule gets right, each with its
+  reason. Castlegar is in Central Kootenay and works with Trail.
+
+A place with no zone and no override joins the nearest hub **among the basins
+that draw from its own census division**. The division does the work that a
+road network would: without it, Ganges is 24 km from Sidney across Haro Strait
+and the Saanich Peninsula leaves Victoria for Salt Spring.
+
+### Four kinds of access, not two
+
+`road`, `ferry`, `pass` and `remote`. The fourth is not in the original brief
+and BC needs it anyway: a hundred-odd inhabited places are neither a sailing
+nor a mountain highway but two hundred kilometres of resource road, a winter
+road or a float plane — Tsay Keh Dene, Kwadacha, Takla Landing, the Sustut,
+Gwaii Haanas. Filing them under either of the other two would tell a
+contractor something false about the trip.
+
+The coast is where this matters most. Ninety-odd Tsimshian, Gitga'at, Haisla,
+Heiltsuk, Kitasoo, Wuikinuxv and Nuxalk communities sit on fjords and islands
+with no road at all, and distance alone reads them as a long *drive* up a
+channel — the one error here that would put somebody on a wharf with no boat.
+Metlakatla, Hartley Bay, Kitkatla, Kemano, Klemtu, Ocean Falls and Oweekeno
+are all water access, and a test asserts it.
+
+### The backstop, and what it admits
+
+There is no road network in this repository. A place the tables did not
+classify is assumed to be an ordinary drive, and that assumption fails in one
+direction only — on trapline localities and lake reserves nothing names. So
+past **`DISTANT_KM` = 120 km** great-circle from its hub, an unclassified
+place is marked `remote` rather than quietly offered as a drive. A 60-minute
+drive is roughly 90 km of BC highway, well under 120 km straight-line, so
+nothing inside a real basin is caught and nothing caught is inside one. It
+currently fires on 13 places, visible as `nearest+beyond-range` in
+`assigned_by`.
+
+That is the honest limit of this step: **basins are hand-drawn geography
+checked against distance, not isochrones.** Drive times would need a routing
+engine and ferry schedules, neither of which is here.
+
+### Why 76 and not 45
+
+The brief this was built from asked for about 45 basins. Holding to its own
+rule — a 45–60 minute corridor — produces 76, because south of Cache Creek a
+basin is a valley and north of Prince George the next settlement is two hours
+away. The number a contractor sees is basins *per region*, which is 2–7
+throughout and asserted by a test; the total only shows if you expand
+everything.
+
 ## Outputs
 
 - `out/geoname_population.csv` — one row per geoname, 36 columns:
@@ -322,6 +407,13 @@ threshold, which is exclusive.
   `selected_because`. See [The shortlist](#the-shortlist).
 - `out/unclaimed_csds.csv` — the 16 census subdivisions no geoname landed in,
   i.e. the coverage gap seen from the census side.
+- `out/geoname_basins.csv` — one row per geoname with its macro region, basin,
+  hub, `basin_access`, `place_access`, `assigned_by` and `hub_distance_km`.
+  `assigned_by` says which table decided: `hub`, `zone:<key>`, `override`,
+  `nearest`, or `nearest+beyond-range`.
+- `out/service_areas.json` — the same thing shaped for
+  [`webapp/service-areas.html`](../webapp/service-areas.html): the region and
+  basin tables, then every place as a fixed-order array. 290 KB.
 
 `place_population_confidence` is `high` for a containment match and `medium`
 for either nearest tier. It describes how the *polygon* was chosen, not how
