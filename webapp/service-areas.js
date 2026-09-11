@@ -214,22 +214,31 @@
 
   let layersReady = false;
 
+  /** The two layers that do not depend on the selection. Kept separate
+      because `style.load` can fire before the fetch resolves - and does, on a
+      warm cache - which would otherwise build both from an empty state and
+      leave the basemap with no dots and no hub labels for the whole session. */
+  function refreshBaseData() {
+    const all = map.getSource('sa-all');
+    const hubsSrc = map.getSource('sa-hubs');
+    if (all) all.setData(geo([...state.places.values()]));
+    if (hubsSrc) {
+      hubsSrc.setData(geo(
+        [...state.basins.values()].map((b) => ({
+          id: b.hubId, name: b.hub, lat: b.lat, lon: b.lon, pop: 0,
+          access: b.access, basin: b.key,
+        })),
+        (h) => ({ label: state.basins.get(h.basin).label })));
+    }
+  }
+
   function addLayers() {
     const c = colors();
-    const all = [...state.places.values()];
-    const hubs = [...state.basins.values()].map((b) => ({
-      id: b.hubId, name: b.hub, lat: b.lat, lon: b.lon, pop: 0,
-      access: b.access, basin: b.key,
-    }));
 
-    if (!map.getSource('sa-all')) map.addSource('sa-all', { type: 'geojson', data: geo(all) });
+    if (!map.getSource('sa-all')) map.addSource('sa-all', { type: 'geojson', data: geo([]) });
     if (!map.getSource('sa-picked')) map.addSource('sa-picked', { type: 'geojson', data: geo([]) });
-    if (!map.getSource('sa-hubs')) {
-      map.addSource('sa-hubs', {
-        type: 'geojson',
-        data: geo(hubs, (h) => ({ label: state.basins.get(h.basin).label })),
-      });
-    }
+    if (!map.getSource('sa-hubs')) map.addSource('sa-hubs', { type: 'geojson', data: geo([]) });
+    refreshBaseData();
 
     if (!map.getLayer('sa-all')) {
       map.addLayer({
@@ -586,6 +595,7 @@
   /* ---------- Search ---------- */
   function applySearch() {
     const q = state.query.trim().toLowerCase();
+    const sel = selection();
     for (const r of state.regions) {
       const rn = nodes.regions.get(r.key);
       let anyRegion = !q;
@@ -603,6 +613,7 @@
             // Open straight to the matching sub-locales: the point of the
             // search is to find a hamlet without knowing its basin.
             fillPlaces(b, n.list);
+            syncBasin(b, sel);   // rows built just now have never been synced
             n.list.hidden = false;
             n.note.hidden = false;
             n.disclose.setAttribute('aria-expanded', 'true');
@@ -658,7 +669,8 @@
   }
 
   async function copyLink() {
-    const url = location.origin + location.pathname + (encodeState() ? '#' + encodeState() : '');
+    const q = encodeState();
+    const url = location.origin + location.pathname + (q ? '#' + q : '');
     const btn = $('copy-link');
     const said = btn.textContent;
     try {
