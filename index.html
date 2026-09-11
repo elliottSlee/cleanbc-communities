@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CleanBC Communities</title>
+  <meta name="description" content="The 638 shortlisted BC places from pipeline/out/geoname_shortlist.csv, on a map." />
+  <link rel="canonical" href="webapp/" />
+  <!-- The map lives in webapp/ because it reads ../pipeline/out/geoname_shortlist.csv,
+       so the whole repository is the document root. This only forwards the bare URL. -->
+  <script>
+    // Carry the fragment across, so /#40540 still opens Dawson Creek.
+    location.replace('webapp/' + location.search + location.hash);
+  </script>
+  <noscript><meta http-equiv="refresh" content="0; url=webapp/" /></noscript>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      margin: 0; min-height: 100vh;
+      display: flex; align-items: center; justify-content: center;
+      font: 400 15px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    a { color: inherit; }
+  </style>
+</head>
+<body>
+  <p>Redirecting to <a href="webapp/">the map</a>.</p>
+</body>
+</html>

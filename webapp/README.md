@@ -5,8 +5,9 @@ map. Hover a dot for the place's name, type and population; click it (or a row i
 the sidebar) for the whole record, including which geography the number describes.
 
 No build step and no dependencies to install — MapLibre GL and the Inter font load
-from CDNs, the basemap is OpenFreeMap. None of them needs an API key. The CSV is fetched live, so re-running
-`make shortlist` in `../pipeline` updates the map on the next reload.
+from CDNs, the basemap is OpenFreeMap. None of them needs an API key. The CSV is
+fetched live, so re-running `make shortlist` in `../pipeline` updates the map on
+the next reload.
 
 Browsers block `fetch()` from `file://`, so serve the repository root over HTTP:
 
@@ -15,6 +16,19 @@ Browsers block `fetch()` from `file://`, so serve the repository root over HTTP:
 python3 -m http.server 8000
 # then open http://localhost:8000/webapp/
 ```
+
+## Deployed
+
+<https://elliottslee.github.io/cleanbc-communities/webapp/>
+
+GitHub Pages serves the repository root of `main`, which is why the page's
+`../pipeline/out/geoname_shortlist.csv` resolves there exactly as it does under
+`http.server`. Two files at the root support this: `.nojekyll`, so Pages copies
+every file through verbatim instead of running Jekyll, and `index.html`, which
+forwards the bare URL here and carries the fragment across.
+
+One difference from local use: the deployed map reads the **committed** CSV, so
+re-running `make shortlist` only changes it once you commit and push the result.
 
 A place can be linked to directly: `#` plus its `geoname_id`, e.g. `/webapp/#40540` opens Dawson Creek.
 
