@@ -23,9 +23,9 @@
   // The three kinds of travel a contractor opts into, in the order the
   // sidebar lists them. `road` is not here because it is never optional.
   const BARRIERS = [
-    { key: 'ferry', label: 'Ferry or water access', toggle: 't-ferry', count: 'n-ferry' },
-    { key: 'pass', label: 'Mountain pass', toggle: 't-pass', count: 'n-pass' },
-    { key: 'remote', label: 'Resource road or fly-in', toggle: 't-remote', count: 'n-remote' },
+    { key: 'ferry', label: 'Ferry or water access', short: 'Ferries', toggle: 't-ferry', count: 'n-ferry' },
+    { key: 'pass', label: 'Mountain pass', short: 'Passes', toggle: 't-pass', count: 'n-pass' },
+    { key: 'remote', label: 'Resource road or fly-in', short: 'Resource roads', toggle: 't-remote', count: 'n-remote' },
   ];
   const ACCESS_COLOR = {
     road: 'var(--c-road)', ferry: 'var(--c-ferry)',
@@ -36,6 +36,9 @@
   };
 
   const $ = (id) => document.getElementById(id);
+  // One pane at a time below this width, which changes what a tap on a row
+  // should do: there is no map beside the tree to point at.
+  const narrow = window.matchMedia('(max-width: 760px)');
   const fmt = (n) => (n == null || Number.isNaN(n)) ? '—' : n.toLocaleString('en-CA');
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -167,21 +170,35 @@
     return (t === 'dark' || t === 'light') ? t : (mql.matches ? 'dark' : 'light');
   };
 
-  const map = new maplibregl.Map({
-    container: 'map', style: STYLE[currentTheme()],
-    bounds: BC_BOUNDS, fitBoundsOptions: { padding: 24 },
-    minZoom: 3, maxZoom: 14,
-    attributionControl: false, dragRotate: false,
-    pitchWithRotate: false, touchPitch: false,
-  });
-  map.touchZoomRotate.disableRotation();
-  map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left');
-  map.addControl(new maplibregl.AttributionControl({ compact: false }), 'bottom-left');
+  /* The map is a second view of the selection, not what makes the selection
+     work, so it is optional from here down. MapLibre needs WebGL and a 900 KB
+     download; an old phone, a blocked CDN or a browser with WebGL turned off
+     used to throw here and take the whole page with it, leaving a contractor
+     staring at "Loading..." forever. Now the tree still builds and the Map tab
+     goes away. */
+  let map = null;
+  try {
+    map = new maplibregl.Map({
+      container: 'map', style: STYLE[currentTheme()],
+      bounds: BC_BOUNDS, fitBoundsOptions: { padding: 24 },
+      minZoom: 3, maxZoom: 14,
+      attributionControl: false, dragRotate: false,
+      pitchWithRotate: false, touchPitch: false,
+    });
+    map.touchZoomRotate.disableRotation();
+    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left');
+    map.addControl(new maplibregl.AttributionControl({ compact: false }), 'bottom-left');
+  } catch (err) {
+    console.warn('No map on this browser; the selector works without it.', err);
+    map = null;
+  }
+  const onMap = (...args) => { if (map) map.on(...args); };
 
-  const popup = new maplibregl.Popup({
+  const popup = map ? new maplibregl.Popup({
     closeButton: false, closeOnClick: false, className: 'place-tip',
     anchor: 'bottom', maxWidth: 'none',
-  });
+  }) : { setLngLat() { return this; }, setOffset() { return this; },
+         setHTML() { return this; }, addTo() { return this; }, remove() {} };
 
   // Read the palette out of the stylesheet so the two files cannot drift, and
   // so a theme change picks up the dark variants.
@@ -296,7 +313,7 @@
     layersReady = true;
     syncMap();
   }
-  map.on('style.load', addLayers);
+  onMap('style.load', addLayers);
 
   function syncMap() {
     if (!layersReady) return;
@@ -308,7 +325,7 @@
     }
   }
 
-  map.on('mousemove', ['sa-picked', 'sa-all', 'sa-hubs'], (e) => {
+  onMap('mousemove', ['sa-picked', 'sa-all', 'sa-hubs'], (e) => {
     const f = e.features && e.features[0];
     if (!f) return;
     const p = state.places.get(Number(f.id));
@@ -321,11 +338,11 @@
       `</div>`
     ).addTo(map);
   });
-  map.on('mouseleave', ['sa-picked', 'sa-all', 'sa-hubs'], () => {
+  onMap('mouseleave', ['sa-picked', 'sa-all', 'sa-hubs'], () => {
     popup.remove();
     map.getCanvas().style.cursor = '';
   });
-  map.on('click', (e) => {
+  onMap('click', (e) => {
     const hits = map.queryRenderedFeatures(e.point, {
       layers: ['sa-hubs', 'sa-picked', 'sa-all'].filter((l) => map.getLayer(l)),
     });
@@ -364,11 +381,13 @@
 
       const disclose = head.querySelector('.sa-disclose');
       const box = head.querySelector('.sa-box');
-      disclose.addEventListener('click', () => {
+      const flip = () => {
         const open = disclose.getAttribute('aria-expanded') === 'true';
         disclose.setAttribute('aria-expanded', String(!open));
         body.hidden = open;
-      });
+      };
+      disclose.addEventListener('click', flip);
+      head.querySelector('.sa-label').addEventListener('click', flip);
       box.addEventListener('change', () => {
         for (const key of r.basins) takeBasin(key, box.checked);
         commit();
@@ -406,15 +425,20 @@
 
     const disclose = head.querySelector('.sa-disclose');
     const box = head.querySelector('.sa-box');
-    disclose.addEventListener('click', () => {
+    const flip = () => {
       const open = disclose.getAttribute('aria-expanded') === 'true';
       disclose.setAttribute('aria-expanded', String(!open));
       note.hidden = open;
       list.hidden = open;
       if (!open) { fillPlaces(b, list); syncBasin(b, selection()); }
-    });
+    };
+    disclose.addEventListener('click', flip);
     box.addEventListener('change', () => { takeBasin(b.key, box.checked); commit(); });
-    head.querySelector('.sa-name').addEventListener('click', () => showBasin(b.key));
+    // On a phone the detail card lives on a view you cannot see from here, so
+    // the name opens what is under it instead.
+    head.querySelector('.sa-name').addEventListener('click', () => {
+      if (narrow.matches) flip(); else showBasin(b.key);
+    });
 
     const node = { wrap, head, box, note, list, disclose, filled: false, rows: new Map() };
     nodes.basins.set(b.key, node);
@@ -508,7 +532,7 @@
     }).length;
     if (dropped) blocked.push(`${fmt(dropped)} you removed by hand`);
     $('sum-hint').textContent = !sel.size
-      ? 'Nothing selected yet. Open a region and take a basin.'
+      ? 'Nothing selected yet. Open a region below and tick an area.'
       : (blocked.length ? 'Not included: ' + blocked.join(', ') + '.'
         : 'Every place in the basins you took is included.');
 
@@ -526,6 +550,13 @@
       }
       $(bar.count).textContent = fmt(n);
     }
+  }
+
+  function syncBarrierState() {
+    const on = BARRIERS.filter((b) => state.allow[b.key]).map((b) => b.short);
+    $('barrier-state').textContent = on.length
+      ? on.join(', ') + ' included'
+      : 'Ferries, passes and resource roads are off';
   }
 
   function commit() {
@@ -582,7 +613,7 @@
     $('detail').hidden = false;
 
     if (!quiet) {
-      map.flyTo({ center: [b.lon, b.lat], zoom: Math.max(map.getZoom(), 7.2), duration: 600, essential: true });
+      if (map) map.flyTo({ center: [b.lon, b.lat], zoom: Math.max(map.getZoom(), 7.2), duration: 600, essential: true });
       const n = nodes.basins.get(key);
       const r = nodes.regions.get(b.region);
       if (r && r.body.hidden) { r.body.hidden = false; r.disclose.setAttribute('aria-expanded', 'true'); }
@@ -704,9 +735,46 @@
   for (const bar of BARRIERS) {
     $(bar.toggle).addEventListener('change', (e) => {
       state.allow[bar.key] = e.target.checked;
+      syncBarrierState();
       commit();
     });
   }
+  /* The map is a second view of the selection, not the way into it. Switching
+     is a phone concern; on a desktop both panes are on screen and `data-view`
+     changes nothing. */
+  const app = document.querySelector('.app');
+  if (!map) {
+    app.dataset.map = 'off';
+    $('map').textContent = 'The map needs WebGL, which this browser is not giving it. Everything else works.';
+  }
+  function setView(view) {
+    app.dataset.view = view;
+    $('view-areas').setAttribute('aria-pressed', String(view === 'areas'));
+    $('view-map').setAttribute('aria-pressed', String(view === 'map'));
+    // The pane keeps its size in both views, so this is only insurance against
+    // a switch that coincided with a rotation or a browser chrome change.
+    if (view === 'map' && map) requestAnimationFrame(() => map.resize());
+  }
+  $('view-areas').addEventListener('click', () => setView('areas'));
+  $('view-map').addEventListener('click', () => setView('map'));
+
+  const barrierHead = $('barrier-head');
+  const barrierBody = $('barrier-body');
+  function openBarriers(open) {
+    barrierHead.setAttribute('aria-expanded', String(open));
+    barrierBody.hidden = !open;
+  }
+  barrierHead.addEventListener('click', () => {
+    if (!narrow.matches) return;   // it is a heading up there, not a handle
+    openBarriers(barrierHead.getAttribute('aria-expanded') !== 'true');
+  });
+  openBarriers(!narrow.matches);
+  narrow.addEventListener('change', (e) => {
+    openBarriers(!e.matches);
+    if (!e.matches) setView('areas');
+    else if (map) requestAnimationFrame(() => map.resize());
+  });
+
   $('search').addEventListener('input', (e) => { state.query = e.target.value; applySearch(); });
   $('detail-close').addEventListener('click', closeDetail);
   $('clear').addEventListener('click', () => {
@@ -728,7 +796,7 @@
   function applyTheme() {
     layersReady = false;
     popup.remove();
-    map.setStyle(STYLE[currentTheme()]);
+    if (map) map.setStyle(STYLE[currentTheme()]);
   }
   $('theme').addEventListener('click', () => {
     const next = currentTheme() === 'dark' ? 'light' : 'dark';
@@ -751,6 +819,7 @@
       buildLegend();
       for (const bar of BARRIERS) $(bar.toggle).checked = state.allow[bar.key];
       syncBarrierCounts();
+      syncBarrierState();
       if (layersReady) syncMap();
       commit();
       if (restored && state.taken.size) {

@@ -61,6 +61,21 @@ selected place with its basin, hub and access.
 Selections also persist in `localStorage`, so a reload keeps your work. A link
 in the URL wins over the stored one.
 
+**On a phone it is a list, not a map.** Below 760px the two panes stop sharing
+the screen: the page opens on the selector and the map becomes the second of
+two tabs. A map is the wrong first screen here — it shows you the province but
+gives you nothing to answer with — so it is somewhere to check your work rather
+than the way in. The travel toggles collapse into a header that says what is
+on, because three switches above the fold would push the thing you came to use
+off it, and rows, checkboxes and buttons all grow to thumb size. Tapping a
+region or a basin name opens it; on a desktop, where the card has a map to sit
+beside, a basin name still opens the card instead.
+
+Both panes keep the same grid cell and the same size at every width — the one
+you are not looking at is only made `visibility: hidden`. Giving the map
+`display: none` would leave MapLibre measuring a zero-sized box and fitting the
+whole province into it.
+
 Keyboard: `/` focuses search, `Esc` clears it or closes the card. Searching a
 place name opens the basins that contain it, which is how you find out that
 Errington is in Parksville–Qualicum.

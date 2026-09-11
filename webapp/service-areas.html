@@ -20,7 +20,14 @@
   </script>
 </head>
 <body>
-  <div class="app">
+  <!-- On a phone the selector is the page and the map is a second view of it.
+       These tabs are the only way back from the map, so they sit outside .app,
+       which the narrow-screen rules collapse to a single full-height pane. -->
+  <nav class="sa-views" aria-label="Switch view">
+    <button class="sa-view" id="view-areas" type="button" aria-pressed="true">Choose areas</button>
+    <button class="sa-view" id="view-map" type="button" aria-pressed="false">Map</button>
+  </nav>
+  <div class="app" data-view="areas">
     <aside class="sidebar">
       <header class="sidebar__header">
         <div class="brand">
@@ -29,7 +36,8 @@
           <a class="sa-crumb" href="./">All places →</a>
         </div>
         <p class="brand__sub">
-          Where will you travel to work? Pick commute basins, not municipalities.
+          Where will you travel to work? Open a region, then tick the areas you
+          would drive to — the towns and hamlets around each one come with it.
         </p>
       </header>
 
@@ -46,7 +54,15 @@
       </section>
 
       <section class="sa-barriers" aria-label="Travel a contractor has to opt into">
-        <h2 class="sa-h">Will you travel this way?</h2>
+        <!-- Collapsed on a phone, where three toggles at the top would push the
+             thing you came to use below the fold. Always open above 760px. -->
+        <button class="sa-barriers__head" id="barrier-head" type="button"
+                aria-expanded="false" aria-controls="barrier-body">
+          <span class="sa-h">Will you travel this way?</span>
+          <span class="sa-barriers__state" id="barrier-state">Ferries, passes and resource roads are off</span>
+          <span class="sa-barriers__chev" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></span>
+        </button>
+        <div class="sa-barriers__body" id="barrier-body" hidden>
         <label class="sa-toggle">
           <input type="checkbox" id="t-ferry" />
           <span class="sa-toggle__box" aria-hidden="true"></span>
@@ -74,6 +90,7 @@
           </span>
           <span class="sa-toggle__n" id="n-remote">—</span>
         </label>
+        </div>
       </section>
 
       <div class="search sa-search">
