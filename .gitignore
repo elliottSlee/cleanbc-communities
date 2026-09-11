@@ -1,0 +1,18 @@
+# Build and OS junk
+__pycache__/
+*.pyc
+.DS_Store
+
+# Bulk StatCan downloads. Every one of these is a public file that the
+# pipeline either re-fetches on its own or that pipeline/README.md names
+# precisely enough to download by hand; see "Getting the inputs" there.
+# They are excluded because each exceeds GitHub's 100 MB per-file limit,
+# 4.8 GB in total.
+#
+# Census Profile data tables (3.6 GB, 809 MB, 367 MB). The small
+# *_meta.txt and *_Geo_starting_row*.CSV siblings stay tracked, so the
+# products remain identifiable without the bulk.
+*_English_CSV_data*.csv
+
+# Boundary files downloaded by `make boundaries` (pipeline/03_fetch_boundaries.py).
+pipeline/data/*.zip
