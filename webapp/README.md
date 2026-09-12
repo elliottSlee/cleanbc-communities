@@ -30,12 +30,19 @@ python3 -m http.server 8000
 contractor to read a list of 3,216 places or to pretend their business stops at
 a municipal boundary.
 
-It reads `../pipeline/out/service_areas.json` — 16 macro regions, 76 commute
-basins, and every geoname in one of them. See
+It reads `../pipeline/out/service_areas.json` — BC's 29 regional districts, 76
+commute basins, and every geoname in one of them. See
 [Commute basins](../pipeline/README.md#commute-basins) for how the geography is
 built; this file is about the page.
 
-**Take a basin, not a list.** Open a macro region, tick a basin, and its hub
+**The top level is the province's own.** The districts come from the BC Data
+Catalogue, so the first thing a contractor reads is the boundary they already
+pay taxes to — Cariboo, qathet, Kitimat-Stikine — listed alphabetically by the
+short name, with the official one on the tooltip and in the exported CSV. It is
+a way in, not an answer: nobody's service area is the Peace River Regional
+District, but everybody knows whether they are in it.
+
+**Take a basin, not a list.** Open a regional district, tick a basin, and its hub
 and every unincorporated hamlet around it come with it. Ticking *Comox Valley*
 takes Courtenay, Comox, Cumberland, Royston, Merville and Black Creek — three
 of which are in no municipality and would otherwise have to be hunted down by
@@ -43,20 +50,35 @@ name. A disclosure arrow expands the basin into its sub-locales so any one of
 them can be unticked; the basin checkbox then shows indeterminate rather than
 silently lying about what is in.
 
-**Barriers are off by default.** Three toggles — ferries, mountain passes,
-resource roads and fly-in — gate both whole basins and individual sub-locales.
-With ferries off, taking the Comox Valley leaves Hornby and Denman out and says
-so; the Southern Gulf Islands cannot be taken at all. This is the case the page
-exists for: from Victoria, neither Salt Spring nor Duncan is dragged in because
-the straight line looks short.
+**Nothing is gated; the page asks instead.** Every area in the province can be
+ticked at any time. There used to be three switches — ferries, passes,
+resource roads — that decided what a contractor was *allowed* to pick, and they
+were wrong about the people they most affected: somebody whose whole business
+is on Haida Gwaii does not take a ferry to work, they live there, and being
+made to turn ferries on first is the page telling them they are unusual.
+
+So the first pick is free, whatever it costs to reach. After that, a pick that
+commits to travel not already in the selection says so once — *"Getting to
+Southern Gulf Islands means a sailing. There is a schedule and a fare, and a
+day's work can turn into an overnight."* — and waits. **Yes, add it** ticks the
+box; **Cancel** leaves it unticked. An area carrying two kinds of travel asks
+once and lists both. Removing an area never asks, and once a kind of travel is
+in, it is never asked about again until *Clear*. The summary then reports what
+the selection involves rather than gating it: *12 reached by ferry, 3 resource
+road or fly-in*.
+
+The distance rules underneath are unchanged, and they are the reason this is
+safe: from Victoria, neither Salt Spring nor Duncan is dragged in because the
+straight line looks short.
 
 **The selection is decisions, not places.** What the page stores is which
 basins you took, which sub-locales you unticked, which strays you added, and
-which travel you allow — and it recomputes the place list from those. So
-turning ferries off and on again drops and restores Hornby without forgetting
-that you had also unticked Merville, and the whole selection fits in the URL.
-*Copy link* hands over a working link; *Download CSV* writes one row per
-selected place with its basin, hub and access.
+which travel you have agreed to — and it recomputes the place list from those.
+Unticking Merville and re-taking the Comox Valley does not quietly forget it,
+and the whole selection fits in the URL. *Copy link* hands over a working link;
+*Download CSV* writes one row per selected place with its basin, hub, regional
+district and access. Opening somebody else's link never interrogates you about
+travel their area already does.
 
 Selections also persist in `localStorage`, so a reload keeps your work. A link
 in the URL wins over the stored one.
@@ -65,11 +87,10 @@ in the URL wins over the stored one.
 the screen: the page opens on the selector and the map becomes the second of
 two tabs. A map is the wrong first screen here — it shows you the province but
 gives you nothing to answer with — so it is somewhere to check your work rather
-than the way in. The travel toggles collapse into a header that says what is
-on, because three switches above the fold would push the thing you came to use
-off it, and rows, checkboxes and buttons all grow to thumb size. Tapping a
-region or a basin name opens it; on a desktop, where the card has a map to sit
-beside, a basin name still opens the card instead.
+than the way in. Rows, checkboxes and buttons all grow to thumb size, and the
+question above becomes a sheet off the bottom edge, clear of the home bar.
+Tapping a district or a basin name opens it; on a desktop, where the card has a
+map to sit beside, a basin name still opens the card instead.
 
 Both panes keep the same grid cell and the same size at every width — the one
 you are not looking at is only made `visibility: hidden`. Giving the map
@@ -78,7 +99,8 @@ whole province into it.
 
 Keyboard: `/` focuses search, `Esc` clears it or closes the card. Searching a
 place name opens the basins that contain it, which is how you find out that
-Errington is in Parksville–Qualicum.
+Errington is in Parksville–Qualicum; searching a district name — either the
+short one or the official one — narrows the tree to that district.
 
 ## Deployed
 

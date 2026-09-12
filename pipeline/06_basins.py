@@ -10,14 +10,18 @@ regional districts, they accidentally commit to a fifth of the province.
 
 This step builds a third geography on top of the join's output: roughly
 45 *commute basins*, each a 45-60 minute driving corridor around one commercial
-hub, grouped into macro regions. Every geoname in `out/geoname_population.csv`
-lands in exactly one basin, so the unincorporated places the municipal list
-drops - Errington, Roberts Creek, Merville, Royston - are covered by naming
-their hub.
+hub. Every geoname in `out/geoname_population.csv` lands in exactly one basin,
+so the unincorporated places the municipal list drops - Errington, Roberts
+Creek, Merville, Royston - are covered by naming their hub.
 
-Three tables below are hand-authored, and they are the whole model:
+The basins hang under BC's regional districts, which `make districts` downloads
+from the BC Data Catalogue: 27 regional districts, the Stikine Region and the
+Northern Rockies Regional Municipality, 29 areas that tile the province. A
+contractor opens the district they already pay taxes to and finds the basins
+inside it, and nothing at the top level was invented here.
 
-  REGIONS   the macro regions, in the order the UI shows them.
+Two tables below are hand-authored, and they are the whole model:
+
   BASINS    one per hub. `hub` names a row of the source CSV; its coordinates
             come from that row, so no coordinate is typed here and a
             misspelled hub is a hard error rather than a dot in the ocean.
@@ -30,9 +34,11 @@ Three tables below are hand-authored, and they are the whole model:
 Everything else is derived. A place with no zone joins the nearest hub among
 the basins that draw from its census division, which keeps assignment inside
 real geography: straight-line distance alone would put Salt Spring in Victoria
-and Duncan next door to it.
+and Duncan next door to it. A basin's parent district is wherever its hub
+stands, so that too is read off the data rather than typed.
 
     python3 06_basins.py [--source out/geoname_population.csv]
+                         [--districts data/regional_districts.geojson]
                          [--out out/geoname_basins.csv]
                          [--json out/service_areas.json]
                          [--report]
@@ -77,46 +83,14 @@ ACCESS_LEVELS = [ROAD, FERRY, PASS, REMOTE]
 # caught by this and nothing caught by it is inside one.
 DISTANT_KM = 120
 
-# The 29 census divisions, by the name the province uses for the regional
-# district that shares each one's boundary. Only used for reporting and for
-# the `cds` field below to stay readable.
-CD_NAMES = {
-    "5901": "East Kootenay", "5903": "Central Kootenay",
-    "5905": "Kootenay Boundary", "5907": "Okanagan-Similkameen",
-    "5909": "Fraser Valley", "5915": "Metro Vancouver", "5917": "Capital",
-    "5919": "Cowichan Valley", "5921": "Nanaimo", "5923": "Alberni-Clayoquot",
-    "5924": "Strathcona", "5926": "Comox Valley", "5927": "qathet",
-    "5929": "Sunshine Coast", "5931": "Squamish-Lillooet",
-    "5933": "Thompson-Nicola", "5935": "Central Okanagan",
-    "5937": "North Okanagan", "5939": "Columbia-Shuswap", "5941": "Cariboo",
-    "5943": "Mount Waddington", "5945": "Central Coast", "5947": "North Coast",
-    "5949": "Kitimat-Stikine", "5951": "Bulkley-Nechako",
-    "5953": "Fraser-Fort George", "5955": "Peace River", "5957": "Stikine",
-    "5959": "Northern Rockies",
-}
+# BC's regional districts, downloaded by `make districts`. Read rather than
+# typed, so the top level of the selector carries the province's own names and
+# cannot drift from them; see 03b_fetch_districts.py.
+DEFAULT_DISTRICTS = os.path.join(HERE, "data", "regional_districts.geojson")
 
-REGIONS = [
-    ("vi-south",          "Vancouver Island · South"),
-    ("vi-central",        "Vancouver Island · Central"),
-    ("vi-north",          "Vancouver Island · North"),
-    ("sunshine-coast",    "Sunshine Coast & qathet"),
-    ("lower-mainland",    "Lower Mainland"),
-    ("fraser-valley",     "Fraser Valley & Canyon"),
-    ("sea-to-sky",        "Sea to Sky"),
-    ("thompson",          "Thompson–Nicola & Shuswap"),
-    ("okanagan",          "Okanagan & Similkameen"),
-    ("kootenay-west",     "West Kootenay & Boundary"),
-    ("kootenay-east",     "East Kootenay & Columbia"),
-    ("cariboo",           "Cariboo–Chilcotin & Central Coast"),
-    ("northwest",         "Northwest Coast"),
-    ("northern-interior", "Northern Interior"),
-    ("prince-george",     "Prince George & Robson Valley"),
-    ("peace-liard",       "Peace & Liard"),
-]
-
-# key, label, region, hub, access, cds, note
+# key, label, hub, access, cds, note
 #
-# `access` is how the *basin* is reached from the rest of its macro region, so
+# `access` is how the *basin* is reached from the rest of its district, so
 # it is the Malahat on Cowichan and a sailing on Salt Spring. `cds` is the set
 # of census divisions a basin may claim places from; it defaults to the hub's
 # own, and is widened only where one labour market straddles a divisional
@@ -126,207 +100,212 @@ REGIONS = [
 # what its zone hands it. Every island basin needs it: Ganges is 24 km from
 # Sidney across Haro Strait and would otherwise take the Saanich Peninsula off
 # Victoria, which is the exact mistake the whole design exists to prevent.
-B = lambda key, label, region, hub, access=ROAD, cds=(), note="", closed=False: dict(
-    key=key, label=label, region=region, hub=hub, access=access,
+#
+# There is no `region` here. A basin belongs to the regional district its hub
+# stands in, which the crosswalk below reads off DataBC's boundaries, so the
+# geographic headings in the table are reading order for a human and nothing
+# more.
+B = lambda key, label, hub, access=ROAD, cds=(), note="", closed=False: dict(
+    key=key, label=label, hub=hub, access=access,
     cds=tuple(cds), note=note, closed=closed)
 
 BASINS = [
     # --- Vancouver Island · South -------------------------------------
-    B("victoria", "Greater Victoria", "vi-south", "Victoria",
+    B("victoria", "Greater Victoria", "Victoria",
       note="Victoria, Saanich, Oak Bay, Esquimalt, View Royal, Sidney and the Saanich Peninsula."),
-    B("west-shore", "West Shore & Sooke", "vi-south", "Sooke",
+    B("west-shore", "West Shore & Sooke", "Sooke",
       note="Langford, Colwood, Metchosin, Highlands, and out Highway 14 to Port Renfrew."),
-    B("gulf-islands-south", "Southern Gulf Islands", "vi-south", "Ganges",
+    B("gulf-islands-south", "Southern Gulf Islands", "Ganges",
       access=FERRY, cds=("5917", "5919"),
       note="Salt Spring, Pender, Mayne, Galiano, Saturna, Thetis. Every job is a sailing, and hopping between islands is often two.", closed=True),
 
     # --- Vancouver Island · Central -----------------------------------
-    B("cowichan", "Cowichan Valley", "vi-central", "Duncan", access=PASS,
+    B("cowichan", "Cowichan Valley", "Duncan", access=PASS,
       note="Over the Malahat from Victoria: Duncan, North Cowichan, Chemainus, Ladysmith, Lake Cowichan."),
-    B("nanaimo", "Nanaimo & Area", "vi-central", "Nanaimo",
+    B("nanaimo", "Nanaimo & Area", "Nanaimo",
       note="Nanaimo, Lantzville, Cedar, South Wellington. Gabriola is a sailing off the harbour."),
-    B("oceanside", "Parksville–Qualicum", "vi-central", "Parksville",
+    B("oceanside", "Parksville–Qualicum", "Parksville",
       note="Parksville, Qualicum Beach, Errington, Coombs, Bowser, Deep Bay."),
-    B("port-alberni", "Port Alberni Valley", "vi-central", "Port Alberni",
+    B("port-alberni", "Port Alberni Valley", "Port Alberni",
       access=PASS,
       note="Over the Alberni Summit on Highway 4: Port Alberni, Sproat Lake, Beaver Creek, Bamfield."),
-    B("west-coast-vi", "Tofino–Ucluelet", "vi-central", "Tofino", access=PASS,
+    B("west-coast-vi", "Tofino–Ucluelet", "Tofino", access=PASS,
       note="Past Sutton Pass and another two hours: Tofino, Ucluelet, Hitacu, Esowista, Macoah."),
 
     # --- Vancouver Island · North -------------------------------------
-    B("comox-valley", "Comox Valley", "vi-north", "Courtenay",
+    B("comox-valley", "Comox Valley", "Courtenay",
       note="Courtenay, Comox, Cumberland, Royston, Merville, Black Creek, Union Bay."),
-    B("campbell-river", "Campbell River & Area", "vi-north", "Campbell River",
+    B("campbell-river", "Campbell River & Area", "Campbell River",
       note="Campbell River, Campbellton, Quinsam, Sayward, Woss. Quadra and Cortes are sailings."),
-    B("gold-river", "Gold River, Tahsis & Zeballos", "vi-north", "Gold River",
+    B("gold-river", "Gold River, Tahsis & Zeballos", "Gold River",
       access=PASS,
       note="Over the island spine on Highway 28, then gravel to Tahsis and Zeballos."),
-    B("north-island", "North Island", "vi-north", "Port McNeill",
+    B("north-island", "North Island", "Port McNeill",
       note="Port Hardy, Port McNeill, Port Alice, Coal Harbour, Holberg, Winter Harbour. Alert Bay, Sointula and the Broughton inlets are boat trips."),
 
     # --- Sunshine Coast & qathet --------------------------------------
-    B("sechelt", "Lower Sunshine Coast", "sunshine-coast", "Sechelt",
+    B("sechelt", "Lower Sunshine Coast", "Sechelt",
       access=FERRY,
       note="Gibsons, Roberts Creek, Sechelt, Davis Bay, Halfmoon Bay. Forty minutes from Horseshoe Bay, and no road around."),
-    B("pender-harbour", "Pender Harbour & Egmont", "sunshine-coast", "Madeira Park",
+    B("pender-harbour", "Pender Harbour & Egmont", "Madeira Park",
       access=FERRY,
       note="Madeira Park, Garden Bay, Egmont, Earls Cove — an hour beyond Sechelt."),
-    B("powell-river", "qathet / Powell River", "sunshine-coast", "Powell River",
+    B("powell-river", "qathet / Powell River", "Powell River",
       access=FERRY,
       note="Powell River, Westview, Lund, Saltery Bay. Two ferries from Vancouver; Texada is a third."),
 
     # --- Lower Mainland -----------------------------------------------
-    B("vancouver", "Vancouver & Burnaby", "lower-mainland", "Vancouver",
+    B("vancouver", "Vancouver & Burnaby", "Vancouver",
       note="Vancouver, Burnaby, New Westminster, Musqueam."),
-    B("north-shore", "North Shore", "lower-mainland", "North Vancouver",
+    B("north-shore", "North Shore", "North Vancouver",
       note="City and District of North Vancouver, West Vancouver, Lions Bay. Bowen Island is a sailing from Horseshoe Bay."),
-    B("richmond-delta", "Richmond & Delta", "lower-mainland", "Richmond",
+    B("richmond-delta", "Richmond & Delta", "Richmond",
       note="Richmond, Delta, Ladner, Tsawwassen, Steveston."),
-    B("surrey-langley", "Surrey, White Rock & Langley", "lower-mainland", "Surrey",
+    B("surrey-langley", "Surrey, White Rock & Langley", "Surrey",
       note="Surrey, White Rock, City and Township of Langley, Cloverdale, Semiahmoo."),
-    B("tri-cities", "Tri-Cities & Ridge Meadows", "lower-mainland", "Coquitlam",
+    B("tri-cities", "Tri-Cities & Ridge Meadows", "Coquitlam",
       note="Coquitlam, Port Coquitlam, Port Moody, Anmore, Belcarra, Maple Ridge, Pitt Meadows."),
 
     # --- Fraser Valley & Canyon ---------------------------------------
-    B("abbotsford-mission", "Abbotsford & Mission", "fraser-valley", "Abbotsford",
+    B("abbotsford-mission", "Abbotsford & Mission", "Abbotsford",
       note="Abbotsford, Mission, Matsqui, Sumas Prairie, Deroche."),
-    B("chilliwack", "Chilliwack & Agassiz", "fraser-valley", "Chilliwack",
+    B("chilliwack", "Chilliwack & Agassiz", "Chilliwack",
       note="Chilliwack, Sardis, Agassiz, Harrison Hot Springs, Cultus Lake, Rosedale."),
-    B("hope-canyon", "Hope & the Fraser Canyon", "fraser-valley", "Hope",
+    B("hope-canyon", "Hope & the Fraser Canyon", "Hope",
       note="Hope, Yale, Spuzzum, Boston Bar, North Bend."),
 
     # --- Sea to Sky ----------------------------------------------------
-    B("squamish", "Squamish & Howe Sound", "sea-to-sky", "Squamish",
+    B("squamish", "Squamish & Howe Sound", "Squamish",
       note="Squamish, Brackendale, Britannia Beach, Furry Creek, Garibaldi Highlands."),
-    B("whistler-pemberton", "Whistler & Pemberton", "sea-to-sky", "Whistler",
+    B("whistler-pemberton", "Whistler & Pemberton", "Whistler",
       note="Whistler, Pemberton, Mount Currie, Birken, D'Arcy."),
-    B("lillooet", "Lillooet & Bridge River", "sea-to-sky", "Lillooet", access=PASS,
+    B("lillooet", "Lillooet & Bridge River", "Lillooet", access=PASS,
       note="Over the Duffey Lake road from Pemberton, or up from Cache Creek. The Duffey closes in winter."),
 
     # --- Thompson–Nicola & Shuswap -------------------------------------
-    B("kamloops", "Kamloops & Area", "thompson", "Kamloops",
+    B("kamloops", "Kamloops & Area", "Kamloops",
       note="Kamloops, Chase, Savona, Pritchard, Logan Lake, Sun Peaks, Tk'emlúps."),
-    B("merritt", "Merritt & the Nicola Valley", "thompson", "Merritt", access=PASS,
+    B("merritt", "Merritt & the Nicola Valley", "Merritt", access=PASS,
       note="Over the Coquihalla from either end: Merritt, Lower Nicola, Douglas Lake, Shulus."),
-    B("cache-creek", "Cache Creek, Ashcroft & Clinton", "thompson", "Cache Creek",
+    B("cache-creek", "Cache Creek, Ashcroft & Clinton", "Cache Creek",
       note="The Highway 97 junction: Cache Creek, Ashcroft, Clinton, Spences Bridge, 70 Mile House."),
-    B("north-thompson", "North Thompson", "thompson", "Clearwater",
+    B("north-thompson", "North Thompson", "Clearwater",
       note="Barriere, Clearwater, Vavenby, Blue River, Avola."),
-    B("lytton", "Lytton & the Thompson Canyon", "thompson", "Lytton",
+    B("lytton", "Lytton & the Thompson Canyon", "Lytton",
       note="Lytton, the Lytton First Nation reserves, Botanie, Stein, Kanaka Bar."),
-    B("shuswap", "Shuswap", "thompson", "Salmon Arm", cds=("5939",),
+    B("shuswap", "Shuswap", "Salmon Arm", cds=("5939",),
       note="Salmon Arm, Sicamous, Sorrento, Blind Bay, Tappen, Malakwa."),
 
     # --- Okanagan & Similkameen ----------------------------------------
-    B("kelowna", "Central Okanagan", "okanagan", "Kelowna",
+    B("kelowna", "Central Okanagan", "Kelowna",
       note="Kelowna, West Kelowna, Lake Country, Peachland, Westbank, Winfield."),
-    B("vernon", "North Okanagan", "okanagan", "Vernon",
+    B("vernon", "North Okanagan", "Vernon",
       note="Vernon, Coldstream, Armstrong, Spallumcheen, Enderby, Lumby, Falkland."),
-    B("penticton", "South Okanagan", "okanagan", "Penticton",
+    B("penticton", "South Okanagan", "Penticton",
       note="Penticton, Summerland, Naramata, Okanagan Falls, Kaleden."),
-    B("oliver-osoyoos", "Oliver, Osoyoos & Keremeos", "okanagan", "Oliver",
+    B("oliver-osoyoos", "Oliver, Osoyoos & Keremeos", "Oliver",
       note="Oliver, Osoyoos, Keremeos, Cawston, the south valley."),
-    B("similkameen", "Similkameen", "okanagan", "Princeton", access=PASS,
+    B("similkameen", "Similkameen", "Princeton", access=PASS,
       note="Over Allison Pass from Hope: Princeton, Tulameen, Coalmont, Hedley."),
 
     # --- West Kootenay & Boundary ---------------------------------------
-    B("nelson", "Nelson & the Slocan", "kootenay-west", "Nelson",
+    B("nelson", "Nelson & the Slocan", "Nelson",
       note="Nelson, Salmo, Slocan, Silverton, New Denver, Kaslo, Balfour, Ymir."),
-    B("trail-castlegar", "Trail, Castlegar & Rossland", "kootenay-west", "Trail",
+    B("trail-castlegar", "Trail, Castlegar & Rossland", "Trail",
       cds=("5903", "5905"),
       note="One labour market across two regional districts: Trail, Castlegar, Rossland, Fruitvale, Warfield, Montrose."),
-    B("creston", "Creston Valley", "kootenay-west", "Creston", access=PASS,
+    B("creston", "Creston Valley", "Creston", access=PASS,
       note="Over the Kootenay Pass from Salmo, or across on the Kootenay Lake ferry."),
-    B("arrow-lakes", "Arrow Lakes", "kootenay-west", "Nakusp", access=FERRY,
+    B("arrow-lakes", "Arrow Lakes", "Nakusp", access=FERRY,
       note="The Needles and Galena Bay cable ferries reach it from every direction."),
-    B("boundary", "Boundary", "kootenay-west", "Grand Forks", access=PASS,
+    B("boundary", "Boundary", "Grand Forks", access=PASS,
       note="Over the Paulson and Eholt summits: Grand Forks, Greenwood, Midway, Christina Lake, Beaverdell."),
 
     # --- East Kootenay & Columbia ---------------------------------------
-    B("cranbrook", "Cranbrook & Kimberley", "kootenay-east", "Cranbrook",
+    B("cranbrook", "Cranbrook & Kimberley", "Cranbrook",
       note="Cranbrook, Kimberley, Marysville, Wardner, Moyie, ʔaq'am."),
-    B("elk-valley", "Elk Valley", "kootenay-east", "Fernie",
+    B("elk-valley", "Elk Valley", "Fernie",
       note="Fernie, Sparwood, Elkford, Hosmer, Jaffray."),
-    B("columbia-valley", "Columbia Valley", "kootenay-east", "Invermere",
+    B("columbia-valley", "Columbia Valley", "Invermere",
       note="Invermere, Radium Hot Springs, Canal Flats, Fairmont Hot Springs, Windermere."),
-    B("golden", "Golden & Kicking Horse", "kootenay-east", "Golden",
+    B("golden", "Golden & Kicking Horse", "Golden",
       access=PASS, cds=("5939",),
       note="Rogers Pass one way, Kicking Horse the other, and both close for avalanche control."),
-    B("revelstoke", "Revelstoke", "kootenay-east", "Revelstoke", access=PASS,
+    B("revelstoke", "Revelstoke", "Revelstoke", access=PASS,
       cds=("5939",),
       note="Between Eagle Pass and Rogers Pass, with nothing for an hour in either direction."),
 
     # --- Cariboo–Chilcotin & Central Coast -------------------------------
-    B("williams-lake", "Williams Lake & Area", "cariboo", "Williams Lake",
+    B("williams-lake", "Williams Lake & Area", "Williams Lake",
       note="Williams Lake, Sugarcane, 150 Mile House, Horsefly, Likely, Soda Creek, McLeese Lake."),
-    B("quesnel", "Quesnel & Area", "cariboo", "Quesnel",
+    B("quesnel", "Quesnel & Area", "Quesnel",
       note="Quesnel, Bouchie Lake, Nazko, Wells, Barkerville, Hixon's south end."),
-    B("south-cariboo", "South Cariboo", "cariboo", "100 Mile House",
+    B("south-cariboo", "South Cariboo", "100 Mile House",
       note="100 Mile House, Lac la Hache, Bridge Lake, Canim Lake, Forest Grove."),
-    B("chilcotin", "Chilcotin", "cariboo", "Alexis Creek",
+    B("chilcotin", "Chilcotin", "Alexis Creek",
       note="Highway 20 west of the Fraser: Alexis Creek, Redstone, Tatla Lake, Nemiah, Chilanko Forks."),
-    B("west-chilcotin", "West Chilcotin", "cariboo", "Anahim Lake",
+    B("west-chilcotin", "West Chilcotin", "Anahim Lake",
       note="Anahim Lake, Ulkatcho, Nimpo Lake, Towdystan, Kleena Kleene — another two hours past Alexis Creek."),
-    B("bella-coola", "Bella Coola Valley", "cariboo", "Hagensborg", access=PASS,
+    B("bella-coola", "Bella Coola Valley", "Hagensborg", access=PASS,
       note="Down the Heckman Pass switchbacks from the Chilcotin, or in on the ferry."),
-    B("central-coast-marine", "Central Coast (Bella Bella & Klemtu)", "cariboo",
+    B("central-coast-marine", "Central Coast (Bella Bella & Klemtu)",
       "Bella Bella 1", access=FERRY, cds=("5945", "5949"),
       note="Bella Bella, Klemtu, Ocean Falls, Shearwater, Namu. Ferry or float plane, and a separate trip to each.", closed=True),
 
     # --- Northwest Coast --------------------------------------------------
-    B("prince-rupert", "Prince Rupert & the North Coast", "northwest", "Prince Rupert",
+    B("prince-rupert", "Prince Rupert & the North Coast", "Prince Rupert",
       note="Prince Rupert, Port Edward, Lax Kw'alaams, Metlakatla, Kitkatla."),
-    B("haida-gwaii", "Haida Gwaii", "northwest", "Masset", access=FERRY, cds=("5947",),
+    B("haida-gwaii", "Haida Gwaii", "Masset", access=FERRY, cds=("5947",),
       note="Old Massett, Port Clements, Tlell, Skidegate, Daajing Giids, Sandspit. Seven hours on the Skeena, or a flight.", closed=True),
-    B("terrace-kitimat", "Terrace & Kitimat", "northwest", "Terrace",
+    B("terrace-kitimat", "Terrace & Kitimat", "Terrace",
       note="Terrace, Kitimat, Thornhill, Kitamaat Village, Kitselas, Kitsumkalum."),
-    B("hazeltons", "The Hazeltons", "northwest", "New Hazelton",
+    B("hazeltons", "The Hazeltons", "New Hazelton",
       note="New Hazelton, Hazelton, South Hazelton, Kispiox, Gitanmaax, Gitsegukla, Gitwangak."),
-    B("nass-valley", "Nass Valley", "northwest", "New Aiyansh",
+    B("nass-valley", "Nass Valley", "New Aiyansh",
       note="Gitlaxt'aamiks, Gitwinksihlkw, Laxgalts'ap, Gingolx, Nass Camp."),
-    B("stewart", "Stewart & the Bear Valley", "northwest", "Stewart", access=PASS,
+    B("stewart", "Stewart & the Bear Valley", "Stewart", access=PASS,
       note="Highway 37A over Bear Pass: 65 km from the junction with nothing in between."),
 
     # --- Northern Interior -------------------------------------------------
-    B("smithers", "Bulkley Valley", "northern-interior", "Smithers",
+    B("smithers", "Bulkley Valley", "Smithers",
       note="Smithers, Telkwa, Houston, Witset, Quick, Topley."),
-    B("burns-lake", "Lakes District", "northern-interior", "Burns Lake",
+    B("burns-lake", "Lakes District", "Burns Lake",
       note="Burns Lake, Southside, Francois Lake, Granisle, Decker Lake."),
-    B("nechako", "Nechako", "northern-interior", "Vanderhoof",
+    B("nechako", "Nechako", "Vanderhoof",
       note="Vanderhoof, Fort Fraser, Fraser Lake, Endako, Stoney Creek."),
-    B("fort-st-james", "Fort St. James & Stuart Lake", "northern-interior",
+    B("fort-st-james", "Fort St. James & Stuart Lake",
       "Fort St. James", cds=("5951", "5957"),
       note="Fort St. James, Nak'azdli, Tachie, Middle River, and the Takla and Sustut country beyond the road."),
-    B("dease-lake", "Dease Lake & the Stikine", "northern-interior", "Dease Lake",
+    B("dease-lake", "Dease Lake & the Stikine", "Dease Lake",
       cds=("5949", "5957"),
       note="Highway 37 north: Dease Lake, Iskut, Telegraph Creek, Good Hope Lake, Jade City."),
-    B("atlin", "Atlin & the Far Northwest", "northern-interior", "Atlin",
+    B("atlin", "Atlin & the Far Northwest", "Atlin",
       cds=("5957",),
       note="Reached through the Yukon: ninety minutes from Whitehorse, two days from Vancouver."),
 
     # --- Prince George & Robson Valley --------------------------------------
-    B("prince-george", "Prince George & Area", "prince-george", "Prince George",
+    B("prince-george", "Prince George & Area", "Prince George",
       note="Prince George, Beaverley, Pineview, Shelley, Hixon, Bear Lake."),
-    B("mackenzie", "Mackenzie", "prince-george", "Mackenzie",
+    B("mackenzie", "Mackenzie", "Mackenzie",
       note="Mackenzie, McLeod Lake, Parsnip, and the south end of Williston Reservoir."),
-    B("williston", "Williston & the Rocky Mountain Trench", "prince-george",
+    B("williston", "Williston & the Rocky Mountain Trench",
       "Tsay Keh Dene", access=REMOTE, cds=("5955",),
       note="Tsay Keh Dene, Kwadacha/Fort Ware, Ingenika. Two hundred kilometres of resource road north of Mackenzie, or a flight.", closed=True),
-    B("robson-valley", "Robson Valley", "prince-george", "Valemount", access=PASS,
+    B("robson-valley", "Robson Valley", "Valemount", access=PASS,
       note="Valemount, McBride, Dunster, Tête Jaune Cache, over the Yellowhead."),
 
     # --- Peace & Liard --------------------------------------------------------
-    B("dawson-creek", "Dawson Creek & the South Peace", "peace-liard", "Dawson Creek",
+    B("dawson-creek", "Dawson Creek & the South Peace", "Dawson Creek",
       note="Dawson Creek, Pouce Coupe, Rolla, Tomslake, Arras, Farmington."),
-    B("fort-st-john", "Fort St. John & the North Peace", "peace-liard", "Fort St. John",
+    B("fort-st-john", "Fort St. John & the North Peace", "Fort St. John",
       note="Fort St. John, Taylor, Hudson's Hope, Charlie Lake, Baldonnel, Cecil Lake."),
-    B("chetwynd", "Chetwynd & Tumbler Ridge", "peace-liard", "Chetwynd", access=PASS,
+    B("chetwynd", "Chetwynd & Tumbler Ridge", "Chetwynd", access=PASS,
       note="Over the Pine Pass from Prince George: Chetwynd, Tumbler Ridge, Moberly Lake, Jackfish."),
-    B("pink-mountain", "Alaska Highway North", "peace-liard", "Pink Mountain",
+    B("pink-mountain", "Alaska Highway North", "Pink Mountain",
       note="Wonowon, Pink Mountain, Sikanni Chief, Buckinghorse River, Trutch and the Beatton ranches."),
-    B("fort-nelson", "Fort Nelson", "peace-liard", "Fort Nelson", cds=("5959",),
+    B("fort-nelson", "Fort Nelson", "Fort Nelson", cds=("5959",),
       note="Fort Nelson, Prophet River, Fontas, Kahntah, and the Northern Rockies municipality."),
-    B("liard", "Liard & the Northern Rockies Highway", "peace-liard", "Muncho Lake",
+    B("liard", "Liard & the Northern Rockies Highway", "Muncho Lake",
       cds=("5959", "5957"),
       note="Summit Lake, Toad River, Muncho Lake, Liard River, Coal River, Fireside, Lower Post. Four hundred kilometres of Alaska Highway to Watson Lake."),
 ]
@@ -497,6 +476,127 @@ MUNICIPAL_TYPES = ("City", "District Municipality", "Town", "Village",
                    "Resort Municipality")
 
 
+def load_districts(path):
+    """BC's 29 regional-district-level areas, as written by step 3b.
+
+    Each keeps its polygons so the crosswalk below can be proved rather than
+    asserted; the geometry is dropped before anything is written out.
+    """
+    if not os.path.exists(path):
+        raise SystemExit(f"{path} not found - run `make districts` first")
+    with open(path, encoding="utf-8") as f:
+        doc = json.load(f)
+    out = []
+    for feat in doc.get("features", []):
+        p = feat["properties"]
+        geom = feat.get("geometry") or {}
+        groups = ([geom["coordinates"]] if geom.get("type") == "Polygon"
+                  else geom.get("coordinates") or [])
+        rings = [[(pt[0], pt[1]) for pt in ring]
+                 for poly in groups for ring in poly]
+        if not rings:
+            raise SystemExit(f"district {p.get('key')!r} has no geometry")
+        xs = [c[0] for r in rings for c in r]
+        ys = [c[1] for r in rings for c in r]
+        out.append({
+            "key": p["key"], "label": p["label"], "official": p["official"],
+            "abbr": p["abbr"], "area_km2": p.get("area_km2"),
+            "rings": rings,
+            "bbox": (min(xs), min(ys), max(xs), max(ys)),
+        })
+    if not out:
+        raise SystemExit(f"{path} holds no districts")
+    return out
+
+
+def district_crosswalk(places, districts, verbose=True):
+    """Census division uid -> regional district key, decided by the places.
+
+    BC's census divisions were drawn to follow the regional districts, so the
+    mapping exists; it is just not published in either file this pipeline
+    already has. Rather than type 29 pairs and hope, every place is dropped
+    into the DataBC polygons and each division takes the district that holds
+    most of its places.
+
+    The vote matters because the two boundaries are not bit-identical. Three
+    divisions have a single place a few hundred metres over the line, and
+    about ten places on the 49th parallel sit just outside every polygon
+    because the border is a rounded coordinate. A majority absorbs both, and
+    a division that lands nowhere at all is a hard error rather than a silent
+    hole in the selector.
+    """
+    from lib.spatial import PolygonIndex
+    index = PolygonIndex(districts, cells=96)
+    votes, stray = {}, []
+    for p in places:
+        hits = index.query(p["lon"], p["lat"])
+        if not hits:
+            stray.append(p)
+            continue
+        votes.setdefault(p["cd"], {})
+        key = hits[0]["key"]
+        votes[p["cd"]][key] = votes[p["cd"]].get(key, 0) + 1
+
+    cds = sorted(set(p["cd"] for p in places))
+    missing = [c for c in cds if c not in votes]
+    if missing:
+        raise SystemExit("no regional district contains any place in census "
+                         "division(s): " + ", ".join(missing))
+
+    cross = {}
+    split = []
+    for cd in cds:
+        tally = votes[cd]
+        winner = max(tally, key=lambda k: (tally[k], k))
+        cross[cd] = winner
+        if len(tally) > 1:
+            other = sum(v for k, v in tally.items() if k != winner)
+            split.append((cd, winner, tally[winner], other))
+
+    by_key = {d["key"]: d for d in districts}
+    unclaimed = [d["key"] for d in districts if d["key"] not in set(cross.values())]
+    if verbose:
+        print(f"crosswalk: {len(cross)} census divisions -> "
+              f"{len(set(cross.values()))} of {len(districts)} districts",
+              file=sys.stderr)
+        for cd, winner, got, other in split:
+            print(f"  {cd} -> {by_key[winner]['label']} "
+                  f"({got} places; {other} landed just over a line)",
+                  file=sys.stderr)
+        if stray:
+            print(f"  {len(stray)} places outside every district polygon "
+                  f"(border coordinates); their census division decides",
+                  file=sys.stderr)
+        if unclaimed:
+            print("  districts with no places of their own: "
+                  + ", ".join(by_key[k]["label"] for k in unclaimed),
+                  file=sys.stderr)
+    return cross
+
+
+def group_by_district(districts, cross, hubs, verbose=True):
+    """Hang every basin under the district its hub stands in.
+
+    The hub decides, not the members: a basin that draws across a divisional
+    line still has one address, and it is the town the work is dispatched
+    from. A district that ends up with no basin would be a top-level row a
+    contractor could open onto nothing, so it stops the run - the fix is a
+    basin in that district, not a quieter check.
+    """
+    region_of = {}
+    for b in BASINS:
+        region_of[b["key"]] = cross[hubs[b["key"]]["cd"]]
+    empty = [d for d in districts
+             if not any(region_of[b["key"]] == d["key"] for b in BASINS)]
+    if empty:
+        raise SystemExit("no basin is hubbed in: "
+                         + ", ".join(d["label"] for d in empty))
+    if verbose:
+        print(f"{len(districts)} regional districts hold "
+              f"{len(BASINS)} basins", file=sys.stderr)
+    return region_of
+
+
 def load_places(path):
     with open(path, encoding="utf-8", newline="") as f:
         rows = list(csv.DictReader(f))
@@ -569,7 +669,7 @@ def zone_of(place, zones):
     return None
 
 
-def assign(places, hubs):
+def assign(places, hubs, cd_label=None):
     by_key = {b["key"]: b for b in BASINS}
     for z in ZONES:
         if z["basin"] not in by_key:
@@ -593,7 +693,8 @@ def assign(places, hubs):
 
     orphan_cds = sorted(set(p["cd"] for p in places) - set(from_cd))
     if orphan_cds:
-        names = ", ".join(f"{c} {CD_NAMES.get(c, '?')}" for c in orphan_cds)
+        names = ", ".join(f"{c} {(cd_label or {}).get(c, '?')}"
+                          for c in orphan_cds)
         raise SystemExit(f"no basin draws from: {names}")
 
     assigned = []
@@ -641,35 +742,47 @@ def assign(places, hubs):
     return assigned
 
 
+# Two districts per row, and they are not the same question. `district` is
+# where the place is; `basin_district` is where the basin it belongs to is
+# dispatched from, which is what the selector groups by. They differ only for
+# the handful of basins that draw across a divisional line - Salmon Arm works
+# into the Thompson, Fort St. James into the Stikine.
 FIELDS = ["geoname_id", "bc_geographic_name", "geoname_type", "lat", "lon",
-          "place_population", "cd_uid", "cd_name", "macro_region",
-          "macro_region_label", "basin", "basin_label", "basin_hub",
+          "place_population", "cd_uid", "district", "district_label",
+          "basin_district", "basin_district_label",
+          "basin", "basin_label", "basin_hub",
           "is_hub", "basin_access", "place_access", "assigned_by",
           "hub_distance_km"]
 
 
-def write_csv(path, rows, region_label, by_key):
+def write_csv(path, rows, districts, cross, region_of, by_key):
     os.makedirs(os.path.dirname(path), exist_ok=True)
+    label = {d["key"]: d["label"] for d in districts}
     with open(path, "w", encoding="utf-8", newline="") as f:
         w = csv.writer(f)
         w.writerow(FIELDS)
         for r in sorted(rows, key=lambda r: (r["basin"], -(r["pop"] or 0), r["name"])):
             b = by_key[r["basin"]]
+            own = cross[r["cd"]]
+            parent = region_of[b["key"]]
             w.writerow([
                 r["id"], r["name"], r["type"], f"{r['lat']:.7f}", f"{r['lon']:.7f}",
                 "" if r["pop"] is None else r["pop"],
-                r["cd"], CD_NAMES.get(r["cd"], ""),
-                b["region"], region_label[b["region"]],
+                r["cd"], own, label[own], parent, label[parent],
                 b["key"], b["label"], r["hub"],
                 "TRUE" if r["is_hub"] else "FALSE",
                 b["access"], r["access"], r["assigned_by"], f"{r['km']:.1f}",
             ])
 
 
-def write_json(path, rows, hubs, by_key):
+def write_json(path, rows, hubs, by_key, districts, cross, region_of):
     """One self-contained file for the web page: the tables, then every place
     as a fixed-order array. Objects per place would triple the size for no
-    gain, so the key order travels once in `fields`."""
+    gain, so the key order travels once in `fields`.
+
+    The districts arrive here without their polygons. The page groups by them
+    and never draws them, and 20 MB of coastline would be a tax on every
+    phone that opens it."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
     order = {b["key"]: i for i, b in enumerate(BASINS)}
     counts = {}
@@ -678,16 +791,33 @@ def write_json(path, rows, hubs, by_key):
         counts[r["basin"]] = counts.get(r["basin"], 0) + 1
         pops[r["basin"]] = pops.get(r["basin"], 0) + (r["pop"] or 0)
 
+    cd_of = {}
+    for cd, key in cross.items():
+        cd_of.setdefault(key, []).append(cd)
+
+    regions = []
+    for d in districts:
+        keys = [b["key"] for b in BASINS if region_of[b["key"]] == d["key"]]
+        regions.append({
+            "key": d["key"], "label": d["label"], "official": d["official"],
+            "abbr": d["abbr"], "areaKm2": d["area_km2"],
+            "cds": sorted(cd_of.get(d["key"], [])),
+            "basins": keys,
+            "places": sum(counts.get(k, 0) for k in keys),
+            "population": sum(pops.get(k, 0) for k in keys),
+        })
+
     doc = {
         "generated_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "source": "pipeline/out/geoname_population.csv",
-        "regions": [
-            {"key": k, "label": lab,
-             "basins": [b["key"] for b in BASINS if b["region"] == k]}
-            for k, lab in REGIONS
-        ],
+        "regionSource": ("BC Data Catalogue - ABMS regional districts and "
+                         "municipalities, Open Government Licence - "
+                         "British Columbia"),
+        "regionLevel": "Regional district",
+        "regions": regions,
         "basins": [
-            {"key": b["key"], "label": b["label"], "region": b["region"],
+            {"key": b["key"], "label": b["label"],
+             "region": region_of[b["key"]],
              "hub": hubs[b["key"]]["name"], "hubId": hubs[b["key"]]["id"],
              "lat": round(hubs[b["key"]]["lat"], 5),
              "lon": round(hubs[b["key"]]["lon"], 5),
@@ -709,14 +839,15 @@ def write_json(path, rows, hubs, by_key):
         json.dump(doc, f, ensure_ascii=False, separators=(",", ":"))
 
 
-def report(rows, hubs, by_key, region_label):
+def report(rows, hubs, by_key, region_label, region_of):
     groups = {}
     for r in rows:
         groups.setdefault(r["basin"], []).append(r)
     for b in BASINS:
         g = sorted(groups.get(b["key"], []), key=lambda r: -r["km"])
         pop = sum(r["pop"] or 0 for r in g)
-        print(f"\n=== {b['label']}  [{b['key']}]  {region_label[b['region']]}"
+        print(f"\n=== {b['label']}  [{b['key']}]  "
+              f"{region_label[region_of[b['key']]]}"
               f"  hub {hubs[b['key']]['name']}  access {b['access']}")
         print(f"    {len(g)} places, {pop:,} people, "
               f"farthest {g[0]['km'] if g else 0:.0f} km")
@@ -730,6 +861,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--source", default=DEFAULT_SOURCE)
+    ap.add_argument("--districts", default=DEFAULT_DISTRICTS)
     ap.add_argument("--out", default=DEFAULT_OUT)
     ap.add_argument("--json", default=DEFAULT_JSON)
     ap.add_argument("--report", action="store_true",
@@ -740,20 +872,25 @@ def main(argv=None):
         raise SystemExit(f"{args.source} not found - run `make join` first")
 
     places = load_places(args.source)
-    hubs = resolve_hubs(places)
-    rows = assign(places, hubs)
-    by_key = {b["key"]: b for b in BASINS}
-    region_label = dict(REGIONS)
+    districts = load_districts(args.districts)
+    cross = district_crosswalk(places, districts)
+    region_label = {d["key"]: d["label"] for d in districts}
+    cd_label = {cd: region_label[k] for cd, k in cross.items()}
 
-    write_csv(args.out, rows, region_label, by_key)
-    write_json(args.json, rows, hubs, by_key)
+    hubs = resolve_hubs(places)
+    region_of = group_by_district(districts, cross, hubs)
+    rows = assign(places, hubs, cd_label)
+    by_key = {b["key"]: b for b in BASINS}
+
+    write_csv(args.out, rows, districts, cross, region_of, by_key)
+    write_json(args.json, rows, hubs, by_key, districts, cross, region_of)
 
     if args.report:
-        report(rows, hubs, by_key, region_label)
+        report(rows, hubs, by_key, region_label, region_of)
 
     far = sorted(rows, key=lambda r: -r["km"])[:12]
-    print(f"\n{len(REGIONS)} macro regions, {len(BASINS)} commute basins, "
-          f"{len(rows)} places")
+    print(f"\n{len(districts)} regional districts, {len(BASINS)} commute "
+          f"basins, {len(rows)} places")
     print(f"wrote {os.path.relpath(args.out, HERE)} and "
           f"{os.path.relpath(args.json, HERE)}")
     by_how = {}

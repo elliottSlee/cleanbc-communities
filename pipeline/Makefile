@@ -1,9 +1,9 @@
 # Geoname -> population pipeline. Pure stdlib Python 3.10+; no pip install.
 PY ?= python3
 
-.PHONY: all points census municipal boundaries join shortlist basins basin-report test clean clean-all progress
+.PHONY: all points census municipal boundaries districts join shortlist basins basin-report test clean clean-all progress
 
-all: points census municipal boundaries join shortlist basins
+all: points census municipal boundaries districts join shortlist basins
 
 points:            ## fetch a coordinate per Geonames.csv row (resumable)
 	$(PY) 01_fetch_points.py --workers 6
@@ -16,6 +16,9 @@ municipal:         ## extract BC Stats estimates for the 162 municipalities
 
 boundaries:        ## download DA + CSD boundaries from StatCan (~353 MB)
 	$(PY) 03_fetch_boundaries.py
+
+districts:         ## download BC's 29 regional districts from DataBC (~20 MB)
+	$(PY) 03b_fetch_districts.py
 
 join:              ## produce out/geoname_population.csv
 	$(PY) 04_join.py

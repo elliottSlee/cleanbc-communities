@@ -6,10 +6,18 @@
 
    The one idea the whole file turns on: the selection is not a list of places.
    It is a small set of decisions - which basins you took, which sub-locales you
-   unticked inside them, which strays you added, and which kinds of travel you
-   are willing to do - and the list of places is recomputed from those. That is
-   why turning "ferries" off drops Hornby Island without forgetting that you had
-   also unticked Merville, and why a selection fits in a shareable URL. */
+   unticked inside them, and which strays you added - and the list of places is
+   recomputed from those. That is why unticking Merville and then re-taking the
+   Comox Valley does not quietly forget it, and why a selection fits in a
+   shareable URL.
+
+   Nothing here is gated. Every area in the province can be ticked, because a
+   contractor on Haida Gwaii does not "take a ferry" to work - they live there,
+   and a page that made them switch ferries on first would be telling them
+   something false about their own commute. Instead the page watches what the
+   selection commits to: the first pick is free, and a later pick that adds a
+   ferry, a mountain pass or a fly-in route says so once and waits for an
+   answer. Cancel leaves the box unticked. */
 
 (function () {
   'use strict';
@@ -20,13 +28,27 @@
     dark: 'https://tiles.openfreemap.org/styles/dark',
   };
 
-  // The three kinds of travel a contractor opts into, in the order the
-  // sidebar lists them. `road` is not here because it is never optional.
-  const BARRIERS = [
-    { key: 'ferry', label: 'Ferry or water access', short: 'Ferries', toggle: 't-ferry', count: 'n-ferry' },
-    { key: 'pass', label: 'Mountain pass', short: 'Passes', toggle: 't-pass', count: 'n-pass' },
-    { key: 'remote', label: 'Resource road or fly-in', short: 'Resource roads', toggle: 't-remote', count: 'n-remote' },
+  /* The travel a contractor can be asked about, in the order anything lists
+     them. `road` is absent because nobody opts into a road.
+
+     `line` finishes the sentence "Getting to <name> ...", so each one has to
+     read as a fact about the trip rather than a warning about the contractor.
+     `chip` is what the summary calls it once it is in the selection. */
+  const TRAVEL = [
+    { key: 'ferry',
+      title: 'This one needs a ferry',
+      line: 'means a sailing. There is a schedule and a fare, and a day’s work can turn into an overnight.',
+      chip: 'reached by ferry' },
+    { key: 'pass',
+      title: 'This one is over a mountain pass',
+      line: 'means a mountain pass — winter tyres from October to April, and it closes after a storm.',
+      chip: 'over a pass' },
+    { key: 'remote',
+      title: 'This one is resource road or fly-in',
+      line: 'means a resource road, a winter road or a float plane. There is no ordinary highway route in.',
+      chip: 'resource road or fly-in' },
   ];
+  const TRAVEL_BY = Object.fromEntries(TRAVEL.map((t) => [t.key, t]));
   const ACCESS_COLOR = {
     road: 'var(--c-road)', ferry: 'var(--c-ferry)',
     pass: 'var(--c-pass)', remote: 'var(--c-remote)',
@@ -51,7 +73,10 @@
   /* ---------- State ---------- */
   const state = {
     regions: [], basins: new Map(), places: new Map(),
-    allow: { ferry: false, pass: false, remote: false },
+    // Travel the contractor has already agreed to, either by confirming it or
+    // by opening with it. Not a filter: nothing is ever hidden or disabled
+    // because of what is in here. It only decides whether to ask again.
+    accepted: { ferry: false, pass: false, remote: false },
     taken: new Set(),     // basin keys the contractor took whole
     excluded: new Set(),  // place ids unticked inside a taken basin
     included: new Set(),  // place ids taken without their basin
@@ -59,53 +84,36 @@
     focus: null,          // basin key in the detail card
   };
 
-  const barrierOK = (access) => access === 'road' || state.allow[access] === true;
-  const basinOK = (b) => barrierOK(b.access);
-  // A place is reachable only if both its basin and its own access clear: the
-  // Gulf Islands are a sailing to get to, and Gwaii Haanas is a boat once you
-  // are there.
-  const placeOK = (p) => basinOK(state.basins.get(p.basin)) && barrierOK(p.access);
-
   /** The selected place ids, recomputed from the decisions above. */
   function selection() {
     const out = new Set();
     for (const key of state.taken) {
       const b = state.basins.get(key);
-      if (!b || !basinOK(b)) continue;
-      for (const p of b.members) {
-        if (barrierOK(p.access) && !state.excluded.has(p.id)) out.add(p.id);
-      }
+      if (!b) continue;
+      for (const p of b.members) if (!state.excluded.has(p.id)) out.add(p.id);
     }
-    for (const id of state.included) {
-      const p = state.places.get(id);
-      if (p && placeOK(p)) out.add(id);
-    }
+    for (const id of state.included) if (state.places.has(id)) out.add(id);
     return out;
   }
 
-  /** none | some | all, over the places in `b` that the toggles currently allow. */
+  /** none | some | all, over every place in the basin. */
   function basinFill(b, sel) {
-    if (!basinOK(b)) return 'none';
-    let n = 0, on = 0;
-    for (const p of b.members) {
-      if (!barrierOK(p.access)) continue;
-      n++;
-      if (sel.has(p.id)) on++;
-    }
-    if (!n || !on) return 'none';
-    return on === n ? 'all' : 'some';
+    let on = 0;
+    for (const p of b.members) if (sel.has(p.id)) on++;
+    if (!on) return 'none';
+    return on === b.members.length ? 'all' : 'some';
   }
 
   function takeBasin(key, on) {
     const b = state.basins.get(key);
-    if (!b || !basinOK(b)) return;
+    if (!b) return;
     for (const p of b.members) { state.excluded.delete(p.id); state.included.delete(p.id); }
     if (on) state.taken.add(key); else state.taken.delete(key);
   }
 
   function takePlace(id, on) {
     const p = state.places.get(id);
-    if (!p || !placeOK(p)) return;
+    if (!p) return;
     const taken = state.taken.has(p.basin);
     if (on) {
       if (taken) state.excluded.delete(id); else state.included.add(id);
@@ -113,6 +121,48 @@
       if (taken) state.excluded.add(id); else state.included.delete(id);
     }
   }
+
+  /* ---------- Asking about travel ---------- */
+
+  /** Every kind of travel a basin carries: its own, and its sub-locales'. */
+  function travelOfBasin(b) {
+    const out = new Set();
+    if (b.access !== 'road') out.add(b.access);
+    for (const p of b.members) if (p.access !== 'road') out.add(p.access);
+    return out;
+  }
+
+  function travelOfPlace(p) {
+    const out = new Set();
+    const b = state.basins.get(p.basin);
+    if (b && b.access !== 'road') out.add(b.access);
+    if (p.access !== 'road') out.add(p.access);
+    return out;
+  }
+
+  /** Of a set of travel kinds, the ones not yet agreed to, in TRAVEL order. */
+  const unagreed = (kinds) =>
+    TRAVEL.filter((t) => kinds.has(t.key) && !state.accepted[t.key]);
+
+  const nothingPicked = () => !state.taken.size && !state.included.size;
+
+  /** Ask before committing to travel, unless there is nothing to ask about.
+
+      The exception is the whole point of this design: the very first pick
+      never asks. Somebody whose service area starts at Alert Bay or Bella
+      Bella is not opting into a boat, they are describing where they live,
+      and being made to tick "I take ferries" first would be the page telling
+      them they are unusual. */
+  function withTravel(kinds, what, go) {
+    const asking = unagreed(kinds);
+    if (!asking.length) { go(); return; }
+    if (nothingPicked()) { agree(asking); go(); return; }
+    ask(asking, what).then((yes) => {
+      if (yes) { agree(asking); go(); } else commit();   // snap the box back
+    });
+  }
+
+  const agree = (list) => { for (const t of list) state.accepted[t.key] = true; };
 
   /* ---------- Data ---------- */
   function ingest(doc) {
@@ -135,7 +185,7 @@
   const KEY = 'cbc-service-area';
 
   function encodeState() {
-    const t = BARRIERS.filter((x) => state.allow[x.key]).map((x) => x.key[0]).join('');
+    const t = TRAVEL.filter((x) => state.accepted[x.key]).map((x) => x.key[0]).join('');
     const parts = [];
     if (state.taken.size) parts.push('b=' + [...state.taken].join(','));
     if (state.excluded.size) parts.push('x=' + [...state.excluded].join(','));
@@ -148,12 +198,23 @@
     const q = new URLSearchParams(hash.replace(/^#/, ''));
     if (![...q.keys()].length) return false;
     const t = q.get('t') || '';
-    for (const b of BARRIERS) state.allow[b.key] = t.includes(b.key[0]);
+    for (const b of TRAVEL) state.accepted[b.key] = t.includes(b.key[0]);
     const nums = (s) => (s ? s.split(',').map(Number).filter((n) => state.places.has(n)) : []);
     state.taken = new Set((q.get('b') || '').split(',').filter((k) => state.basins.has(k)));
     state.excluded = new Set(nums(q.get('x')));
     state.included = new Set(nums(q.get('i')));
     return true;
+  }
+
+  /** Whatever the restored selection already travels, the contractor has
+      agreed to by arriving with it. This also carries over links made when
+      `t` meant "ferries allowed" rather than "ferries agreed to": a shared
+      area that crosses water does not interrogate whoever opens it. */
+  function agreeToWhatIsAlreadyIn() {
+    for (const id of selection()) {
+      const p = state.places.get(id);
+      if (p) agree(unagreed(travelOfPlace(p)));
+    }
   }
 
   function persist() {
@@ -367,11 +428,14 @@
 
       const head = document.createElement('div');
       head.className = 'sa-row';
+      // The row says "Cariboo"; the tooltip says "Cariboo Regional District",
+      // which is the name on the tax notice and the one to search for.
       head.innerHTML =
         `<button class="sa-disclose" type="button" aria-expanded="false" aria-label="Expand ${esc(r.label)}">${CHEVRON}</button>` +
-        `<input class="sa-box" type="checkbox" aria-label="Select every basin in ${esc(r.label)}" />` +
-        `<span class="sa-label"><span class="sa-name">${esc(r.label)}</span></span>` +
-        `<span class="sa-meta">${r.basins.length} basins</span>`;
+        `<input class="sa-box" type="checkbox" aria-label="Select every area in ${esc(r.official || r.label)}" />` +
+        `<span class="sa-label" title="${esc(r.official || r.label)}">` +
+        `<span class="sa-name">${esc(r.label)}</span></span>` +
+        `<span class="sa-meta">${fmt(r.places)}</span>`;
       sec.appendChild(head);
 
       const body = document.createElement('div');
@@ -389,12 +453,24 @@
       disclose.addEventListener('click', flip);
       head.querySelector('.sa-label').addEventListener('click', flip);
       box.addEventListener('change', () => {
-        for (const key of r.basins) takeBasin(key, box.checked);
-        commit();
+        const on = box.checked;
+        const take = () => {
+          for (const key of r.basins) takeBasin(key, on);
+          commit();
+        };
+        if (!on) { take(); return; }
+        const kinds = new Set();
+        for (const key of r.basins) {
+          for (const k of travelOfBasin(state.basins.get(key))) kinds.add(k);
+        }
+        withTravel(kinds, r.official || r.label, take);
       });
 
       for (const key of r.basins) body.appendChild(buildBasin(state.basins.get(key)));
-      nodes.regions.set(r.key, { sec, head, box, body, disclose, region: r });
+      nodes.regions.set(r.key, {
+        sec, head, box, body, disclose, region: r,
+        meta: head.querySelector('.sa-meta'),
+      });
       tree.appendChild(sec);
     }
   }
@@ -433,7 +509,12 @@
       if (!open) { fillPlaces(b, list); syncBasin(b, selection()); }
     };
     disclose.addEventListener('click', flip);
-    box.addEventListener('change', () => { takeBasin(b.key, box.checked); commit(); });
+    box.addEventListener('change', () => {
+      const on = box.checked;
+      const take = () => { takeBasin(b.key, on); commit(); };
+      if (!on) { take(); return; }
+      withTravel(travelOfBasin(b), b.label, take);
+    });
     // On a phone the detail card lives on a view you cannot see from here, so
     // the name opens what is under it instead.
     head.querySelector('.sa-name').addEventListener('click', () => {
@@ -458,7 +539,12 @@
         (p.isHub ? '<span class="sa-sub">hub</span>' : '') + tag(p.access) + `</span>` +
         `<span class="sa-meta">${p.pop == null ? '—' : fmt(p.pop)}</span>`;
       const box = row.querySelector('.sa-box');
-      box.addEventListener('change', () => { takePlace(p.id, box.checked); commit(); });
+      box.addEventListener('change', () => {
+        const on = box.checked;
+        const take = () => { takePlace(p.id, on); commit(); };
+        if (!on) { take(); return; }
+        withTravel(travelOfPlace(p), p.name, take);
+      });
       node.rows.set(p.id, { row, box, place: p });
       frag.appendChild(row);
     }
@@ -470,35 +556,29 @@
   function syncBasin(b, sel) {
     const n = nodes.basins.get(b.key);
     const fill = basinFill(b, sel);
-    const ok = basinOK(b);
-    n.box.disabled = !ok;
     n.box.checked = fill === 'all';
     n.box.indeterminate = fill === 'some';
-    n.head.querySelector('.sa-label').classList.toggle('sa-label--off', !ok);
     let on = 0;
     for (const p of b.members) if (sel.has(p.id)) on++;
     n.head.querySelector('.sa-meta').textContent =
       on ? `${fmt(on)} / ${fmt(b.places)}` : fmt(b.places);
     if (!n.filled) return;
-    for (const { box, place } of n.rows.values()) {
-      const reachable = placeOK(place);
-      box.disabled = !reachable;
-      box.checked = sel.has(place.id);
-      box.parentElement.querySelector('.sa-label')
-        .classList.toggle('sa-label--off', !reachable);
-    }
+    for (const { box, place } of n.rows.values()) box.checked = sel.has(place.id);
   }
 
   function syncTree(sel) {
     for (const b of state.basins.values()) syncBasin(b, sel);
-    for (const { box, region } of nodes.regions.values()) {
-      const usable = region.basins.map((k) => state.basins.get(k)).filter(basinOK);
-      const fills = usable.map((b) => basinFill(b, sel));
+    for (const { box, meta, region } of nodes.regions.values()) {
+      const fills = region.basins.map((k) => basinFill(state.basins.get(k), sel));
       const all = fills.length && fills.every((f) => f === 'all');
       const none = !fills.length || fills.every((f) => f === 'none');
-      box.disabled = !usable.length;
       box.checked = all;
       box.indeterminate = !all && !none;
+      let on = 0;
+      for (const k of region.basins) {
+        for (const p of state.basins.get(k).members) if (sel.has(p.id)) on++;
+      }
+      meta.textContent = on ? `${fmt(on)} / ${fmt(region.places)}` : fmt(region.places);
     }
   }
 
@@ -511,52 +591,46 @@
     $('sum-places').textContent = fmt(sel.size);
     $('sum-pop').textContent = fmt(pop);
 
-    const blocked = [];
-    for (const bar of BARRIERS) {
-      if (state.allow[bar.key]) continue;
-      let n = 0;
-      for (const b of state.basins.values()) {
-        if (!state.taken.has(b.key)) continue;
-        if (b.access === bar.key) { n += b.members.length; continue; }
-        if (!basinOK(b)) continue;
-        for (const p of b.members) if (p.access === bar.key) n++;
-      }
-      if (n) blocked.push(`${fmt(n)} behind ${bar.label.toLowerCase()}`);
-    }
-    // Two different reasons a place is missing, and a contractor needs to be
-    // able to tell them apart: a barrier they have not opted into, or a
-    // sub-locale they unticked themselves.
+    // The only thing that can be missing now is a sub-locale the contractor
+    // unticked themselves, so say so plainly rather than listing reasons.
     const dropped = [...state.excluded].filter((id) => {
       const p = state.places.get(id);
-      return p && state.taken.has(p.basin) && barrierOK(p.access);
+      return p && state.taken.has(p.basin);
     }).length;
-    if (dropped) blocked.push(`${fmt(dropped)} you removed by hand`);
     $('sum-hint').textContent = !sel.size
-      ? 'Nothing selected yet. Open a region below and tick an area.'
-      : (blocked.length ? 'Not included: ' + blocked.join(', ') + '.'
-        : 'Every place in the basins you took is included.');
+      ? 'Nothing selected yet. Open a regional district below and tick an area.'
+      : (dropped
+        ? `Everything in the areas you took, less ${fmt(dropped)} you removed by hand.`
+        : 'Everything in the areas you took is included.');
+    syncTravel(sel);
 
     $('clear').disabled = !sel.size && !state.taken.size;
     $('download').disabled = !sel.size;
     $('copy-link').disabled = !sel.size;
   }
 
-  function syncBarrierCounts() {
-    for (const bar of BARRIERS) {
-      let n = 0;
-      for (const b of state.basins.values()) {
-        if (b.access === bar.key) { n += b.members.length; continue; }
-        for (const p of b.members) if (p.access === bar.key) n++;
+  /** What the selection involves, counted from the places actually in it.
+      This replaced three switches, and the difference matters: it reports the
+      area a contractor described instead of deciding what they may describe. */
+  function syncTravel(sel) {
+    const strip = $('sum-travel');
+    const counts = {};
+    for (const id of sel) {
+      for (const t of travelOfPlace(state.places.get(id))) {
+        counts[t] = (counts[t] || 0) + 1;
       }
-      $(bar.count).textContent = fmt(n);
     }
-  }
-
-  function syncBarrierState() {
-    const on = BARRIERS.filter((b) => state.allow[b.key]).map((b) => b.short);
-    $('barrier-state').textContent = on.length
-      ? on.join(', ') + ' included'
-      : 'Ferries, passes and resource roads are off';
+    const chips = TRAVEL.filter((t) => counts[t.key]);
+    strip.hidden = !chips.length;
+    strip.replaceChildren();
+    for (const t of chips) {
+      const chip = document.createElement('span');
+      chip.className = 'sa-travel__chip';
+      chip.innerHTML =
+        `<span class="sa-travel__dot" style="background:${ACCESS_COLOR[t.key]}"></span>` +
+        `<span class="sa-travel__n">${fmt(counts[t.key])}</span> ${esc(t.chip)}`;
+      strip.appendChild(chip);
+    }
   }
 
   function commit() {
@@ -603,13 +677,13 @@
     }
 
     const take = $('d-take');
-    const ok = basinOK(b);
     const taken = state.taken.has(b.key);
-    take.disabled = !ok;
-    take.textContent = !ok
-      ? `Turn on ${ACCESS_LABEL[b.access].toLowerCase()} travel to take this`
-      : (taken ? 'Remove this basin' : 'Add this basin');
-    take.onclick = () => { takeBasin(b.key, !taken); commit(); };
+    take.textContent = taken ? 'Remove this area' : 'Add this area';
+    take.onclick = () => {
+      const go = () => { takeBasin(b.key, !taken); commit(); };
+      if (taken) { go(); return; }
+      withTravel(travelOfBasin(b), b.label, go);
+    };
     $('detail').hidden = false;
 
     if (!quiet) {
@@ -629,11 +703,17 @@
     const sel = selection();
     for (const r of state.regions) {
       const rn = nodes.regions.get(r.key);
-      let anyRegion = !q;
+      // A district matches by either name, and takes all its basins with it:
+      // somebody typing "Kootenay Boundary" wants the district, not the two
+      // basins whose labels happen to contain the word.
+      const hitRegion = !!q && (r.label.toLowerCase().includes(q)
+        || (r.official || '').toLowerCase().includes(q));
+      let anyRegion = !q || hitRegion;
       for (const key of r.basins) {
         const b = state.basins.get(key);
         const n = nodes.basins.get(key);
         if (!q) { n.wrap.hidden = false; continue; }
+        if (hitRegion) { n.wrap.hidden = false; continue; }
         const hitBasin = b.label.toLowerCase().includes(q) || b.hub.toLowerCase().includes(q);
         const hitPlace = !hitBasin && b.members.some((p) => p.name.toLowerCase().includes(q));
         const hit = hitBasin || hitPlace;
@@ -669,7 +749,7 @@
   /* ---------- Export ---------- */
   const CSV_COLS = ['geoname_id', 'bc_geographic_name', 'geoname_type',
     'lat', 'lon', 'place_population', 'basin', 'basin_label', 'basin_hub',
-    'macro_region', 'place_access'];
+    'regional_district', 'place_access'];
 
   function toCSV(sel) {
     const q = (v) => {
@@ -682,7 +762,7 @@
     for (const [p, b] of ordered) {
       const region = state.regions.find((r) => r.key === b.region);
       lines.push([p.id, p.name, p.type, p.lat, p.lon, p.pop,
-        b.key, b.label, b.hub, region ? region.label : '', p.access].map(q).join(','));
+        b.key, b.label, b.hub, region ? region.official : '', p.access].map(q).join(','));
     }
     return lines.join('\n') + '\n';
   }
@@ -732,13 +812,55 @@
   }
 
   /* ---------- Events ---------- */
-  for (const bar of BARRIERS) {
-    $(bar.toggle).addEventListener('change', (e) => {
-      state.allow[bar.key] = e.target.checked;
-      syncBarrierState();
-      commit();
-    });
+  /* ---------- The dialog ---------- */
+  /* A native <dialog> so the browser handles the backdrop, the focus trap and
+     Escape. Escape closes with an empty returnValue, which is a Cancel, which
+     is what Escape should mean when the question is "shall I add this?".
+     Anything without showModal falls back to the browser's own confirm(). */
+  const dlg = $('ask');
+  let answer = null;
+
+  function ask(list, what) {
+    const many = list.length > 1;
+    $('ask-title').textContent = many
+      ? 'This one takes some getting to' : list[0].title;
+    $('ask-body').textContent = many
+      ? `Getting to ${what} is not a straight drive:`
+      : `Getting to ${what} ${list[0].line}`;
+    const ul = $('ask-list');
+    ul.replaceChildren();
+    if (many) {
+      for (const t of list) {
+        const li = document.createElement('li');
+        li.innerHTML =
+          `<span class="sa-travel__dot" style="background:${ACCESS_COLOR[t.key]}"></span>` +
+          `<span><strong>${esc(ACCESS_LABEL[t.key])}</strong> — ${esc(detail(t))}</span>`;
+        ul.appendChild(li);
+      }
+    }
+    if (typeof dlg.showModal !== 'function') {
+      // No <dialog> here. The browser's own confirm is uglier and every bit
+      // as answerable, which is the only thing that matters.
+      const lines = many ? '\n' + list.map((t) => '- ' + detail(t)).join('\n') : '';
+      return Promise.resolve(window.confirm(
+        `${$('ask-body').textContent}${lines}\n\nAdd it?`));
+    }
+    dlg.showModal();
+    return new Promise((resolve) => { answer = resolve; });
   }
+
+  // "means a sailing. ..." reads as a sentence after the name and as a phrase
+  // after a bullet; this is the phrase.
+  const detail = (t) => t.line.replace(/^means /, '');
+
+  $('ask-ok').addEventListener('click', () => dlg.close('ok'));
+  $('ask-cancel').addEventListener('click', () => dlg.close('cancel'));
+  dlg.addEventListener('close', () => {
+    const resolve = answer;
+    answer = null;
+    if (resolve) resolve(dlg.returnValue === 'ok');
+  });
+
   /* The map is a second view of the selection, not the way into it. Switching
      is a phone concern; on a desktop both panes are on screen and `data-view`
      changes nothing. */
@@ -758,19 +880,7 @@
   $('view-areas').addEventListener('click', () => setView('areas'));
   $('view-map').addEventListener('click', () => setView('map'));
 
-  const barrierHead = $('barrier-head');
-  const barrierBody = $('barrier-body');
-  function openBarriers(open) {
-    barrierHead.setAttribute('aria-expanded', String(open));
-    barrierBody.hidden = !open;
-  }
-  barrierHead.addEventListener('click', () => {
-    if (!narrow.matches) return;   // it is a heading up there, not a handle
-    openBarriers(barrierHead.getAttribute('aria-expanded') !== 'true');
-  });
-  openBarriers(!narrow.matches);
   narrow.addEventListener('change', (e) => {
-    openBarriers(!e.matches);
     if (!e.matches) setView('areas');
     else if (map) requestAnimationFrame(() => map.resize());
   });
@@ -779,12 +889,16 @@
   $('detail-close').addEventListener('click', closeDetail);
   $('clear').addEventListener('click', () => {
     state.taken.clear(); state.excluded.clear(); state.included.clear();
+    // Starting over means the next pick is a first pick again, and a first
+    // pick is never questioned.
+    for (const t of TRAVEL) state.accepted[t.key] = false;
     commit();
   });
   $('download').addEventListener('click', download);
   $('copy-link').addEventListener('click', copyLink);
 
   document.addEventListener('keydown', (e) => {
+    if (dlg.open) return;   // the dialog answers its own Escape
     const typing = e.target instanceof HTMLInputElement && e.target.type !== 'checkbox';
     if (e.key === '/' && !typing) { e.preventDefault(); $('search').focus(); $('search').select(); }
     if (e.key === 'Escape') {
@@ -815,11 +929,9 @@
       if (!restored) {
         try { restored = decodeState('#' + (localStorage.getItem(KEY) || '')); } catch (_) {}
       }
+      agreeToWhatIsAlreadyIn();
       buildTree();
       buildLegend();
-      for (const bar of BARRIERS) $(bar.toggle).checked = state.allow[bar.key];
-      syncBarrierCounts();
-      syncBarrierState();
       if (layersReady) syncMap();
       commit();
       if (restored && state.taken.size) {

@@ -187,14 +187,23 @@ these. Excludes CSD types `RDA` and `IRI` deliberately.
 ## Commute basins (`06_basins.py`) — added after the population work
 
 A service-area geography for contractors, layered on the join's output and
-independent of everything above it: **16 macro regions, 76 commute basins,
-all 3,216 geonames placed**. `pipeline/README.md` has the design; the page is
-`webapp/service-areas.html`. Three things worth knowing before editing it:
+independent of everything above it: **BC's 29 regional districts, 76 commute
+basins, all 3,216 geonames placed**. `pipeline/README.md` has the design; the
+page is `webapp/service-areas.html`. Four things worth knowing before editing
+it:
 
-- **The four tables in the file are the model.** `REGIONS`, `BASINS`, `ZONES`,
-  `OVERRIDES`. Hub coordinates are looked up from the source CSV by name, so a
-  typo is a hard error, and `make basin-report` prints every basin's members
-  farthest-first, which is how the tables get reviewed.
+- **The top level is not ours.** `make districts` (`03b_fetch_districts.py`)
+  downloads the 27 regional districts, the Stikine Region and the Northern
+  Rockies Regional Municipality from the BC Data Catalogue; 29 areas, which is
+  exactly the 29 BC census divisions. `district_crosswalk` proves the pairing
+  by point-in-polygon and majority vote rather than a typed table, because the
+  two boundaries are not bit-identical. The polygons are used once and dropped;
+  `out/service_areas.json` carries names, not coastline.
+- **The three tables in the file are the model.** `BASINS`, `ZONES`,
+  `OVERRIDES`. There is no `REGIONS` any more — a basin belongs to the district
+  its hub stands in. Hub coordinates are looked up from the source CSV by name,
+  so a typo is a hard error, and `make basin-report` prints every basin's
+  members farthest-first, which is how the tables get reviewed.
 - **`closed` basins exist for a reason.** Ganges is 24 km from Sidney across
   Haro Strait, so without it the Saanich Peninsula leaves Victoria for Salt
   Spring — the exact mistake the whole design is meant to prevent. Island
@@ -204,6 +213,12 @@ all 3,216 geonames placed**. `pipeline/README.md` has the design; the page is
   road; distance alone reads them as a long drive up a channel. Bounding-box
   zones tag them `ferry`, and a test asserts a named list of them. Do not
   "simplify" those boxes away.
+
+The page does **not** gate on access any more. Every area is always selectable;
+the first pick is free whatever it costs to reach, and a later pick that adds
+ferry, pass or fly-in travel asks once and takes Cancel for an answer. The
+`access` values still exist and still drive the map colours, the travel summary
+and the wording of that question — they just do not disable anything.
 
 `DISTANT_KM = 120` is the backstop for the absence of a road network: an
 unclassified place farther than that from its hub is called `remote` rather

@@ -16,3 +16,9 @@ __pycache__/
 
 # Boundary files downloaded by `make boundaries` (pipeline/03_fetch_boundaries.py).
 pipeline/data/*.zip
+
+# Regional district boundaries downloaded by `make districts`
+# (pipeline/03b_fetch_districts.py). 19.8 MB of DataBC geometry that the
+# pipeline uses once, to prove the census-division -> regional-district
+# crosswalk; the result travels in out/service_areas.json instead.
+pipeline/data/regional_districts.geojson

@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Service Areas · CleanBC Communities</title>
-  <meta name="description" content="Pick a contractor service area by commute basin rather than by municipality: 16 macro regions, 76 basins, and every one of BC's 3,216 places inside one of them." />
+  <meta name="description" content="Pick a contractor service area by commute basin rather than by municipality: BC's 29 regional districts, 76 commute basins, and every one of the province's 3,216 places inside one of them." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
@@ -36,66 +36,30 @@
           <a class="sa-crumb" href="./">All places →</a>
         </div>
         <p class="brand__sub">
-          Where will you travel to work? Open a region, then tick the areas you
-          would drive to — the towns and hamlets around each one come with it.
+          Where will you travel to work? Open a regional district, then tick the
+          areas you would drive to — the towns and hamlets around each one come
+          with it.
         </p>
       </header>
 
       <section class="sa-summary" aria-live="polite">
         <div class="sa-summary__row">
           <span class="sa-summary__num" id="sum-basins">0</span>
-          <span class="sa-summary__unit">basins</span>
+          <span class="sa-summary__unit">areas</span>
           <span class="sa-summary__num" id="sum-places">0</span>
           <span class="sa-summary__unit">places</span>
           <span class="sa-summary__num" id="sum-pop">0</span>
           <span class="sa-summary__unit">people</span>
         </div>
         <p class="sa-summary__hint" id="sum-hint">Nothing selected yet.</p>
-      </section>
-
-      <section class="sa-barriers" aria-label="Travel a contractor has to opt into">
-        <!-- Collapsed on a phone, where three toggles at the top would push the
-             thing you came to use below the fold. Always open above 760px. -->
-        <button class="sa-barriers__head" id="barrier-head" type="button"
-                aria-expanded="false" aria-controls="barrier-body">
-          <span class="sa-h">Will you travel this way?</span>
-          <span class="sa-barriers__state" id="barrier-state">Ferries, passes and resource roads are off</span>
-          <span class="sa-barriers__chev" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></span>
-        </button>
-        <div class="sa-barriers__body" id="barrier-body" hidden>
-        <label class="sa-toggle">
-          <input type="checkbox" id="t-ferry" />
-          <span class="sa-toggle__box" aria-hidden="true"></span>
-          <span class="sa-toggle__text">
-            <strong>Ferries &amp; water access</strong>
-            <em>Bowen, the Gulf Islands, Haida Gwaii, the Sunshine Coast hops</em>
-          </span>
-          <span class="sa-toggle__n" id="n-ferry">—</span>
-        </label>
-        <label class="sa-toggle">
-          <input type="checkbox" id="t-pass" />
-          <span class="sa-toggle__box" aria-hidden="true"></span>
-          <span class="sa-toggle__text">
-            <strong>Mountain passes &amp; corridors</strong>
-            <em>The Malahat, the Coquihalla, Allison Pass, Rogers Pass</em>
-          </span>
-          <span class="sa-toggle__n" id="n-pass">—</span>
-        </label>
-        <label class="sa-toggle">
-          <input type="checkbox" id="t-remote" />
-          <span class="sa-toggle__box" aria-hidden="true"></span>
-          <span class="sa-toggle__text">
-            <strong>Resource roads &amp; fly-in</strong>
-            <em>Tsay Keh Dene, Kwadacha, the Sustut, Gwaii Haanas</em>
-          </span>
-          <span class="sa-toggle__n" id="n-remote">—</span>
-        </label>
-        </div>
+        <!-- What the selection involves, rather than what it is allowed to
+             involve. Nothing here is a control. -->
+        <div class="sa-travel" id="sum-travel" hidden></div>
       </section>
 
       <div class="search sa-search">
         <svg class="search__icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-        <input id="search" class="search__input" type="search" placeholder="Find a place or a basin" autocomplete="off" spellcheck="false" />
+        <input id="search" class="search__input" type="search" placeholder="Find a place, an area or a district" autocomplete="off" spellcheck="false" />
         <kbd class="search__kbd">/</kbd>
       </div>
 
@@ -137,6 +101,19 @@
       </section>
     </main>
   </div>
+
+  <!-- Asked once, the first time a pick commits to travel the contractor has
+       not already taken on. A contractor who starts on Haida Gwaii is never
+       asked whether they take ferries: they live there. -->
+  <dialog class="sa-ask" id="ask" aria-labelledby="ask-title">
+    <h2 class="sa-ask__title" id="ask-title"></h2>
+    <p class="sa-ask__body" id="ask-body"></p>
+    <ul class="sa-ask__list" id="ask-list"></ul>
+    <div class="sa-ask__actions">
+      <button class="sa-btn" id="ask-cancel" type="button" value="cancel">Cancel</button>
+      <button class="sa-btn sa-btn--primary" id="ask-ok" type="button" value="ok">Yes, add it</button>
+    </div>
+  </dialog>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/5.6.0/maplibre-gl.min.js"></script>
   <script src="service-areas.js"></script>

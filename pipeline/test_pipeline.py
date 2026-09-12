@@ -21,6 +21,7 @@ DA_ZIP = os.path.join(HERE, "data", "lda_000b21a_e.zip")
 CSD_ZIP = os.path.join(HERE, "data", "lcsd000b21a_e.zip")
 CENSUS = os.path.join(HERE, "data", "census_population.csv")
 OUTPUT = os.path.join(HERE, "out", "geoname_population.csv")
+DISTRICTS = os.path.join(HERE, "data", "regional_districts.geojson")
 SHORTLIST = os.path.join(HERE, "out", "geoname_shortlist.csv")
 BASINS_CSV = os.path.join(HERE, "out", "geoname_basins.csv")
 SERVICE_JSON = os.path.join(HERE, "out", "service_areas.json")
@@ -981,15 +982,13 @@ class TestCommuteBasins(unittest.TestCase):
 
     def test_tables_are_internally_consistent(self):
         m = self.mod
-        regions = {k for k, _ in m.REGIONS}
         keys = [b["key"] for b in m.BASINS]
         self.assertEqual(len(keys), len(set(keys)), "duplicate basin key")
         for b in m.BASINS:
-            self.assertIn(b["region"], regions, b["key"])
             self.assertIn(b["access"], m.ACCESS_LEVELS, b["key"])
             self.assertTrue(b["note"], f"{b['key']} has no note")
             for cd in b["cds"]:
-                self.assertIn(cd, m.CD_NAMES, b["key"])
+                self.assertRegex(cd, r"^59\d\d$", b["key"])
         for z in m.ZONES:
             self.assertIn(z["basin"], keys, z["key"])
             self.assertIn(z["access"], m.ACCESS_LEVELS, z["key"])
@@ -998,18 +997,86 @@ class TestCommuteBasins(unittest.TestCase):
             self.assertIn(key, keys, name)
             self.assertTrue(why, f"override {name} has no reason")
 
-    def test_every_region_offers_three_to_seven_basins(self):
-        """The UI expands a region into a list a contractor reads at a glance.
-        One basin makes the region pointless; more than seven is the list the
-        design exists to avoid."""
+    @unittest.skipUnless(os.path.exists(DISTRICTS), "no district download")
+    def test_databc_gives_the_whole_province_once(self):
+        """29 areas: 27 regional districts, the Stikine Region, and the
+        Northern Rockies Regional Municipality that stands in for the district
+        it absorbed. Nothing typed here - if DataBC publishes a boundary
+        change, this is where the pipeline finds out."""
         m = self.mod
+        ds = m.load_districts(DISTRICTS)
+        self.assertEqual(len(ds), 29)
+        keys = [d["key"] for d in ds]
+        self.assertEqual(len(set(keys)), len(keys), "two districts, one key")
+        for d in ds:
+            self.assertRegex(d["key"], r"^[a-z0-9]+(-[a-z0-9]+)*$")
+            self.assertTrue(d["label"] and d["official"] and d["abbr"])
+            self.assertGreaterEqual(len(d["rings"]), 1)
+        # The two names a contractor would actually look for.
+        self.assertIn("metro-vancouver", keys)
+        self.assertIn("northern-rockies", keys)
+        # The province is covered: BC is 944,735 km2 and the areas are legal
+        # boundaries that run into the sea, so the sum is a little over.
+        total = sum(d["area_km2"] for d in ds)
+        self.assertGreater(total, 900_000)
+        self.assertLess(total, 1_100_000)
+
+    def test_short_name_strips_the_boilerplate_either_way_round(self):
+        """"Regional District of X" and "X Regional District" are the same
+        thing named two ways, and an alphabetical picker has to sort them
+        together."""
+        fetch = _load("03b_fetch_districts.py", "step3b")
+        cases = {
+            "Regional District of Bulkley-Nechako": "Bulkley-Nechako",
+            "Cariboo Regional District": "Cariboo",
+            "Northern Rockies Regional Municipality": "Northern Rockies",
+            "Stikine Region (Unincorporated)": "Stikine Region",
+            "qathet Regional District": "qathet",
+        }
+        for official, want in cases.items():
+            self.assertEqual(fetch.short_name(official), want)
+        self.assertEqual(fetch.slug("Fraser-Fort George"), "fraser-fort-george")
+        self.assertEqual(fetch.slug("qathet"), "qathet")
+
+    @unittest.skipUnless(os.path.exists(OUTPUT) and os.path.exists(DISTRICTS),
+                         "no join output or district download")
+    def test_every_census_division_maps_to_one_regional_district(self):
+        """The crosswalk the whole top level rests on. BC's census divisions
+        were drawn to follow the regional districts, so all 29 must land, one
+        each, with no district left holding nothing."""
+        m = self.mod
+        places = m.load_places(OUTPUT)
+        ds = m.load_districts(DISTRICTS)
+        cross = m.district_crosswalk(places, ds, verbose=False)
+        self.assertEqual(len(cross), 29)
+        self.assertEqual(len(set(cross.values())), 29)
+        self.assertEqual(set(cross.values()), {d["key"] for d in ds})
+        # Spot checks a reader can verify from a map.
+        self.assertEqual(cross["5915"], "metro-vancouver")
+        self.assertEqual(cross["5917"], "capital")
+        self.assertEqual(cross["5959"], "northern-rockies")
+        self.assertEqual(cross["5927"], "qathet")
+
+    @unittest.skipUnless(os.path.exists(OUTPUT) and os.path.exists(DISTRICTS),
+                         "no join output or district download")
+    def test_every_district_holds_a_readable_number_of_basins(self):
+        """A district a contractor opens has to have something in it, and
+        few enough to read at a glance. One basin is fine here in a way it
+        was not for hand-drawn regions: the Comox Valley Regional District
+        really is a single commute basin."""
+        m = self.mod
+        places = m.load_places(OUTPUT)
+        ds = m.load_districts(DISTRICTS)
+        cross = m.district_crosswalk(places, ds, verbose=False)
+        hubs = m.resolve_hubs(places)
+        region_of = m.group_by_district(ds, cross, hubs, verbose=False)
         counts = {}
         for b in m.BASINS:
-            counts[b["region"]] = counts.get(b["region"], 0) + 1
-        for key, label in m.REGIONS:
-            n = counts.get(key, 0)
-            self.assertGreaterEqual(n, 2, f"{label} has {n} basins")
-            self.assertLessEqual(n, 7, f"{label} has {n} basins")
+            counts[region_of[b["key"]]] = counts.get(region_of[b["key"]], 0) + 1
+        for d in ds:
+            n = counts.get(d["key"], 0)
+            self.assertGreaterEqual(n, 1, f"{d['label']} has no basin")
+            self.assertLessEqual(n, 7, f"{d['label']} has {n} basins")
 
     @unittest.skipUnless(os.path.exists(OUTPUT), "no join output")
     def test_every_hub_resolves_to_one_place(self):

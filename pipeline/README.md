@@ -10,8 +10,8 @@ shapefile reader, the spreadsheet reader and the point-in-polygon test are
 implemented here and covered by `test_pipeline.py`.
 
 ```bash
-make all      # points -> census -> municipal -> boundaries -> join -> shortlist
-make test     # 81 checks on the hand-rolled geometry, parsing and output
+make all      # points -> census -> municipal -> boundaries -> districts -> join -> shortlist
+make test     # 93 checks on the hand-rolled geometry, parsing and output
 ```
 
 Current result: **3,192 of 3,216 rows (99.3%)** carry a population, and all
@@ -38,6 +38,7 @@ the Census Profile table is a manual step:
 |---|---|
 | `98-401-X2021006_BC_CB_eng_CSV/98-401-X2021006_English_CSV_data_BritishColumbia.csv` | StatCan product **98-401-X2021006**, Census Profile 2021, *British Columbia* CSV. 3.6 GB; the one table `02_census_pop.py` reads. |
 | `pipeline/data/lda_000b21a_e.zip`, `lcsd000b21a_e.zip`, `ldpl000b21a_e.zip` | `make boundaries` (`03_fetch_boundaries.py`) fetches these. |
+| `pipeline/data/regional_districts.geojson` | `make districts` (`03b_fetch_districts.py`) fetches this from the BC Data Catalogue. 20 MB, so it is not committed either. |
 
 The `98-401-X2021011` and `98-401-X2021025` directories are leftovers from the
 earlier designated-place approach described below; nothing reads them. Their
@@ -304,33 +305,70 @@ threshold, which is exclusive.
 `06_basins.py` answers a different question from the rest of the pipeline:
 not *how many people live here* but *would a contractor drive to it*.
 
-BC's official boundaries are the wrong shape for that. Regional districts are
-too big — Peace River is larger than Austria — and municipalities are too
-small, because most of the province's inhabited places are unincorporated and
-belong to no municipality at all. A contractor asked to tick municipalities
-cannot say "the Comox Valley"; asked to tick regional districts, they commit
-to a fifth of the province. Errington, Roberts Creek, Merville and Royston are
-in none of the 162 municipalities and are exactly the places the question is
-about.
+BC's official boundaries are the wrong shape for that on their own. Regional
+districts are too big to *pick* — Peace River is larger than Austria — and
+municipalities are too small, because most of the province's inhabited places
+are unincorporated and belong to no municipality at all. A contractor asked to
+tick municipalities cannot say "the Comox Valley"; asked to tick only regional
+districts, they commit to a fifth of the province. Errington, Roberts Creek,
+Merville and Royston are in none of the 162 municipalities and are exactly the
+places the question is about.
 
-So the step lays a third geography over the join's output: **16 macro regions
-and 76 commute basins**, each a driving corridor around one commercial hub,
-with every one of the 3,216 geonames in exactly one of them.
+So the step lays **76 commute basins** — driving corridors around one
+commercial hub each — over the join's output, with every one of the 3,216
+geonames in exactly one of them, and hangs those under the boundary a
+contractor already knows: **BC's 29 regional districts**, downloaded from the
+BC Data Catalogue. Too big to be the answer, exactly right as the way in.
 
+    make districts       # downloads data/regional_districts.geojson (~20 MB)
     make basins          # writes out/geoname_basins.csv and out/service_areas.json
     make basin-report    # every basin's members, farthest from the hub first
 
-### The four tables are the model
+### The top level comes from DataBC
+
+`03b_fetch_districts.py` reads two layers off the province's WFS endpoint as
+GeoJSON — one request each, no shapefile to unzip:
+
+- `WHSE_LEGAL_ADMIN_BOUNDARIES.ABMS_REGIONAL_DISTRICTS_SP` — 27 regional
+  districts plus the **Stikine Region**, the unincorporated northwest that
+  belongs to no district but is administered as though it were one.
+- `WHSE_LEGAL_ADMIN_BOUNDARIES.ABMS_MUNICIPALITIES_SP`, filtered to the
+  **Northern Rockies Regional Municipality**, which absorbed its own regional
+  district in 2009 and so is a municipality doing a district's job. Without it
+  there is an 86,000 km² hole around Fort Nelson.
+
+29 areas, which is exactly Statistics Canada's 29 BC census divisions — and
+that correspondence is what the rest of the step needs, because every place
+here is already labelled with a census division and nothing is labelled with a
+regional district. Rather than typing 29 pairs and hoping, `district_crosswalk`
+drops all 3,216 places into the DataBC polygons and lets each division take the
+district holding most of them. The majority matters: the two boundaries are not
+bit-identical, three divisions have a single place a few hundred metres over a
+line, and about ten places on the 49th parallel fall just outside every polygon
+because the border is a rounded coordinate. A division that landed nowhere at
+all would stop the run.
+
+The polygons are used once, here, and then dropped. `out/service_areas.json`
+carries names and counts, not 20 MB of coastline for a phone to download.
+
+Display names are derived, not typed: "Regional District of Bulkley-Nechako"
+and "Cariboo Regional District" are the same kind of thing named two ways, and
+a picker listing both in full files half the province under R. The boilerplate
+is stripped for the row and kept as the tooltip and the CSV column.
+
+### The three tables are the model
 
 Everything else is derived, and the tables are meant to be edited.
 
-- **`REGIONS`** — the macro regions, in the order the UI shows them.
 - **`BASINS`** — one per hub. `hub` names a row of the source CSV and the
   coordinates come from that row, so no coordinate is typed by hand and a
   misspelled hub stops the run instead of putting a dot in the ocean. `access`
-  is how the basin is reached from the rest of its region: the Malahat on
+  is how the basin is reached from the rest of its district: the Malahat on
   Cowichan, a sailing on Salt Spring. `closed` keeps a basin out of the
-  distance competition entirely.
+  distance competition entirely. There is no `region` field — a basin belongs
+  to the district its **hub** stands in, because a basin that draws across a
+  divisional line still has one address, and it is the town the work is
+  dispatched from.
 - **`ZONES`** — the barriers: sets of places on the far side of water, a pass,
   or the end of the road, by exact name or by bounding box. A zone overrides
   distance when assigning its places, and stamps them with the access a
@@ -407,13 +445,18 @@ everything.
   `selected_because`. See [The shortlist](#the-shortlist).
 - `out/unclaimed_csds.csv` — the 16 census subdivisions no geoname landed in,
   i.e. the coverage gap seen from the census side.
-- `out/geoname_basins.csv` — one row per geoname with its macro region, basin,
-  hub, `basin_access`, `place_access`, `assigned_by` and `hub_distance_km`.
+- `data/regional_districts.geojson` — the 29 areas from DataBC with their
+  official names, abbreviations and polygons. Not committed: 20 MB, and
+  `make districts` re-fetches it.
+- `out/geoname_basins.csv` — one row per geoname with its basin, hub,
+  `basin_access`, `place_access`, `assigned_by` and `hub_distance_km`, plus
+  two regional districts that are not the same question: `district` is where
+  the *place* is, `basin_district` is where its basin is dispatched from.
   `assigned_by` says which table decided: `hub`, `zone:<key>`, `override`,
   `nearest`, or `nearest+beyond-range`.
 - `out/service_areas.json` — the same thing shaped for
-  [`webapp/service-areas.html`](../webapp/service-areas.html): the region and
-  basin tables, then every place as a fixed-order array. 290 KB.
+  [`webapp/service-areas.html`](../webapp/service-areas.html): the district
+  and basin tables, then every place as a fixed-order array. 295 KB.
 
 `place_population_confidence` is `high` for a containment match and `medium`
 for either nearest tier. It describes how the *polygon* was chosen, not how
