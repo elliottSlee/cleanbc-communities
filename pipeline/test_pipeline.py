@@ -679,7 +679,8 @@ class TestNesting(unittest.TestCase):
 
 class TestShortlist(unittest.TestCase):
     """The shortlist is a filter, not a new calculation: it may drop rows but
-    must never alter one, and must not lose a category to a size threshold."""
+    must never alter one, and must not lose a category to a size threshold -
+    except a literal zero, which is dropped from every category alike."""
 
     @classmethod
     def setUpClass(cls):
@@ -725,26 +726,43 @@ class TestShortlist(unittest.TestCase):
             self.assertIn(m["geoname_id"], kept, m["bc_geographic_name"])
 
     def test_every_indigenous_community_survives_whatever_its_size(self):
-        """Indigenous communities are small by construction - many count zero
-        - so a bare population threshold would delete most of them in BC."""
+        """Indigenous communities are small by construction, so a bare
+        population threshold would delete most of them in BC - but a literal
+        zero is dropped from this category exactly as from any other."""
         indigenous = [r for r in self.source if r["is_primary"] == "TRUE"
-                      and self.mod.is_indigenous(r, self.types)]
+                      and self.mod.is_indigenous(r, self.types)
+                      and r["place_population"] != "0"]
         kept = {r["geoname_id"] for r in self.rows}
         for r in indigenous:
             self.assertIn(r["geoname_id"], kept, r["bc_geographic_name"])
-        self.assertTrue(any(r["place_population"] == "0" for r in indigenous))
+        self.assertTrue(any(int(r["place_population"] or -1) < 100
+                            for r in indigenous))
+
+    def test_zero_population_is_dropped_from_every_category(self):
+        """The one exception to 'no size threshold on these categories': an
+        indigenous community or municipality with a literal zero recorded
+        population is still dropped, because a place with nobody in it adds
+        nothing to the shortlist and only crowds it. A suppressed count
+        (blank in the source) is not the same thing and is unaffected."""
+        zero = [r for r in self.source if r["is_primary"] == "TRUE"
+                and r["place_population"] == "0"]
+        self.assertGreater(len(zero), 0)
+        kept = {r["geoname_id"] for r in self.rows}
+        for r in zero:
+            self.assertNotIn(r["geoname_id"], kept, r["bc_geographic_name"])
 
     def test_reserves_named_by_another_feature_type_are_caught(self):
-        """Three reserves are named by a Community or Locality geoname, so the
-        geoname type alone would miss them. Shuswap was a fourth until the
-        join learned to rank localities last: the reserve is named by both a
-        Locality and an Indian Reserve geoname, and the latter now wins."""
+        """Reserves named by a Community or Locality geoname, so the geoname
+        type alone would miss them. Shuswap was a fourth until the join
+        learned to rank localities last: the reserve is named by both a
+        Locality and an Indian Reserve geoname, and the latter now wins.
+        Kanaka Bar was a fourth of these until the zero-population rule: its
+        reserve counts zero, so it is caught by that rule instead now."""
         names = {r["bc_geographic_name"] for r in self.rows
                  if r["csd_type"] == "Indian reserve"
                  and r["place_population_basis"] == "csd"
                  and r["geoname_type"] != "Indian Reserve"}
-        self.assertEqual(names, {"Mount Currie", "Telegraph Creek",
-                                 "Kanaka Bar"})
+        self.assertEqual(names, {"Mount Currie", "Telegraph Creek"})
 
     def test_the_category_is_not_just_reserves(self):
         """The point of the widening. Nations that concluded treaties or
@@ -784,10 +802,13 @@ class TestShortlist(unittest.TestCase):
 
     def test_village_sites_are_kept_because_nothing_else_names_the_reserve(self):
         """Hitacu is the only row naming Ittatsoo 1; no geoname carries the
-        reserve's own name, so dropping the village site loses the place."""
+        reserve's own name, so dropping the village site loses the place.
+        Ak:tiis is the exception: its dissemination area counts zero, so the
+        zero-population rule drops it despite being a village site too."""
         names = {r["bc_geographic_name"] for r in self.rows}
-        for site in ("Hitacu", "Anaqtl'a", "Houpsitas", "Hi'tatis", "Ak:tiis"):
+        for site in ("Hitacu", "Anaqtl'a", "Houpsitas", "Hi'tatis"):
             self.assertIn(site, names, site)
+        self.assertNotIn("Ak:tiis", names)
         self.assertNotIn("Ittatsoo 1",
                          {r["bc_geographic_name"] for r in self.source})
 

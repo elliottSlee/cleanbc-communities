@@ -5,15 +5,22 @@
 people are already counted on another row. This reduces it to places that can
 be added up and are individually meaningful:
 
-    is_primary AND (population > 1000 OR a municipality
+    is_primary AND population != 0
+               AND (population > 1000 OR a municipality
                     OR an Indigenous community)
 
-The two named categories are kept whatever their size, because a small
-incorporated municipality and a small Indigenous community are still distinct
-communities with their own governments - dropping them at a population
-threshold would quietly delete most of the province's Indigenous communities,
-which are small by construction. The threshold then picks up everywhere else that is
-substantial: unincorporated communities and localities.
+Municipalities and Indigenous communities are kept whatever their size,
+because a small incorporated municipality and a small Indigenous community
+are still distinct communities with their own governments. The threshold then
+picks up everywhere else that is substantial: unincorporated communities and
+localities.
+
+A row with population exactly 0 is dropped regardless of category: a
+reserve or land unit with no recorded population adds nothing to the map and
+only crowds it, so being Indigenous or a municipality no longer exempts a
+literal zero the way it exempts a small-but-nonzero count. A *suppressed*
+count (blank in the source, -1 here) is not the same thing and is not
+affected by this rule.
 
 `selected_because` records which clause admitted each row, so the shortlist
 can be re-cut without rerunning the join.
@@ -115,6 +122,8 @@ def select(rows, minimum=DEFAULT_MIN, csd_types=None):
         csd_types = csd_type_codes()
     for row in rows:
         if row["is_primary"] != "TRUE":
+            continue
+        if population(row) == 0:
             continue
         reasons = []
         if is_municipality(row):
