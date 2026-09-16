@@ -15,6 +15,11 @@ from CDNs, the basemap is OpenFreeMap. None of them needs an API key. The CSV is
 fetched live, so re-running `make shortlist` in `../pipeline` updates the map on
 the next reload.
 
+Both pages also draw the province's own outline, from
+`../pipeline/out/bc_boundary.geojson` (`make province` in `../pipeline`) — a
+single DataBC polygon, drawn under the points so it reads as a boundary rather
+than a shape competing with them.
+
 Browsers block `fetch()` from `file://`, so serve the repository root over HTTP:
 
 ```bash

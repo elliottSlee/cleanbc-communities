@@ -7,6 +7,7 @@
   'use strict';
 
   const CSV_URL = '../pipeline/out/geoname_shortlist.csv';
+  const BOUNDARY_URL = '../pipeline/out/bc_boundary.geojson';
   const STYLE = {
     light: 'https://tiles.openfreemap.org/styles/positron',
     dark: 'https://tiles.openfreemap.org/styles/dark',
@@ -152,9 +153,32 @@
     };
   }
 
+  // Fetched once, independently of style reloads; `addLayers` re-adds it from
+  // here whenever `style.load` fires, same as everything else in this file.
+  let boundary = null;
+  fetch(BOUNDARY_URL)
+    .then((r) => (r.ok ? r.json() : null))
+    .then((d) => { boundary = d; if (map.isStyleLoaded()) addBoundaryLayer(); })
+    .catch(() => {});
+
+  function addBoundaryLayer() {
+    if (!boundary || map.getSource('bc-boundary')) return;
+    map.addSource('bc-boundary', { type: 'geojson', data: boundary });
+    map.addLayer({
+      id: 'bc-boundary-line',
+      type: 'line',
+      source: 'bc-boundary',
+      paint: {
+        'line-color': getComputedStyle(document.documentElement).getPropertyValue('--border-strong').trim() || 'rgba(0,0,0,0.3)',
+        'line-width': 1.25,
+      },
+    });
+  }
+
   let layersReady = false;
   function addLayers() {
     // Called on every style load: setStyle() drops custom sources and layers.
+    addBoundaryLayer(); // added first so points draw on top of it
     if (!map.getSource('places')) {
       map.addSource('places', { type: 'geojson', data: toGeoJSON(visiblePlaces()), promoteId: 'id' });
     }

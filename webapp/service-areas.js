@@ -23,6 +23,7 @@
   'use strict';
 
   const DATA_URL = '../pipeline/out/service_areas.json';
+  const BOUNDARY_URL = '../pipeline/out/bc_boundary.geojson';
   const STYLE = {
     light: 'https://tiles.openfreemap.org/styles/positron',
     dark: 'https://tiles.openfreemap.org/styles/dark',
@@ -310,9 +311,34 @@
     }
   }
 
+  // Fetched once, independently of style reloads; `addLayers` re-adds it from
+  // here whenever `style.load` fires, same as everything else on this map.
+  let boundary = null;
+  if (map) {
+    fetch(BOUNDARY_URL)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { boundary = d; if (map.isStyleLoaded()) addBoundaryLayer(); })
+      .catch(() => {});
+  }
+
+  function addBoundaryLayer() {
+    if (!boundary || map.getSource('bc-boundary')) return;
+    map.addSource('bc-boundary', { type: 'geojson', data: boundary });
+    map.addLayer({
+      id: 'bc-boundary-line',
+      type: 'line',
+      source: 'bc-boundary',
+      paint: {
+        'line-color': getComputedStyle(document.documentElement).getPropertyValue('--border-strong').trim() || 'rgba(0,0,0,0.3)',
+        'line-width': 1.25,
+      },
+    });
+  }
+
   function addLayers() {
     const c = colors();
 
+    addBoundaryLayer(); // added first so basin dots and hubs draw on top of it
     if (!map.getSource('sa-all')) map.addSource('sa-all', { type: 'geojson', data: geo([]) });
     if (!map.getSource('sa-picked')) map.addSource('sa-picked', { type: 'geojson', data: geo([]) });
     if (!map.getSource('sa-hubs')) map.addSource('sa-hubs', { type: 'geojson', data: geo([]) });

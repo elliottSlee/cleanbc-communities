@@ -457,6 +457,10 @@ everything.
 - `out/service_areas.json` — the same thing shaped for
   [`webapp/service-areas.html`](../webapp/service-areas.html): the district
   and basin tables, then every place as a fixed-order array. 295 KB.
+- `out/bc_boundary.geojson` — the province as a single DataBC polygon
+  (`03c_fetch_province.py`), so both webapp maps can draw the outline of BC
+  itself. Small enough (1.5 MB) to be committed, unlike the regional
+  districts fetch above.
 
 `place_population_confidence` is `high` for a containment match and `medium`
 for either nearest tier. It describes how the *polygon* was chosen, not how
