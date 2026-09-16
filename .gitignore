@@ -22,3 +22,10 @@ pipeline/data/*.zip
 # pipeline uses once, to prove the census-division -> regional-district
 # crosswalk; the result travels in out/service_areas.json instead.
 pipeline/data/regional_districts.geojson
+
+# Municipal boundaries downloaded by `make municipalities`
+# (pipeline/03d_fetch_municipalities.py). Used once, by
+# 05b_exclude_nested_municipalities.py, to test containment; the result
+# travels in out/geoname_shortlist.csv and out/excluded_within_municipality.csv
+# instead.
+pipeline/data/municipalities.geojson

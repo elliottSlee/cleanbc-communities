@@ -10,8 +10,10 @@ shapefile reader, the spreadsheet reader and the point-in-polygon test are
 implemented here and covered by `test_pipeline.py`.
 
 ```bash
-make all      # points -> census -> municipal -> boundaries -> districts -> join -> shortlist
-make test     # 93 checks on the hand-rolled geometry, parsing and output
+make all      # points -> census -> municipal -> boundaries -> districts ->
+              # province -> municipalities -> join -> shortlist ->
+              # exclude-nested -> basins
+make test     # checks on the hand-rolled geometry, parsing and output
 ```
 
 Current result: **3,192 of 3,216 rows (99.3%)** carry a population, and all
@@ -39,6 +41,7 @@ the Census Profile table is a manual step:
 | `98-401-X2021006_BC_CB_eng_CSV/98-401-X2021006_English_CSV_data_BritishColumbia.csv` | StatCan product **98-401-X2021006**, Census Profile 2021, *British Columbia* CSV. 3.6 GB; the one table `02_census_pop.py` reads. |
 | `pipeline/data/lda_000b21a_e.zip`, `lcsd000b21a_e.zip`, `ldpl000b21a_e.zip` | `make boundaries` (`03_fetch_boundaries.py`) fetches these. |
 | `pipeline/data/regional_districts.geojson` | `make districts` (`03b_fetch_districts.py`) fetches this from the BC Data Catalogue. 20 MB, so it is not committed either. |
+| `pipeline/data/municipalities.geojson` | `make municipalities` (`03d_fetch_municipalities.py`) fetches this from the BC Data Catalogue - the same layer `make districts` already uses for one row (Northern Rockies), unfiltered. 4 MB, not committed. |
 
 The `98-401-X2021011` and `98-401-X2021025` directories are leftovers from the
 earlier designated-place approach described below; nothing reads them. Their
@@ -300,6 +303,51 @@ forgotten.
 be re-examined without rerunning the join. `--min-population` changes the
 threshold, which is exclusive.
 
+## Dropping places nested inside a municipality (`05b_exclude_nested_municipalities.py`)
+
+The shortlist still has one kind of duplicate `is_primary` cannot see: two
+places whose *census* geography sits side by side, even though one's real
+boundary is entirely inside the other's. Every Indian reserve is its own
+census subdivision, a sibling of the city around it, not something nested
+inside it - so a reserve surrounded by a municipality (Tsawwassen by Delta,
+Musqueam by Vancouver, 66 others) survives the join's nesting pass and lands
+on the shortlist twice over: once as the reserve, once as the city holding it.
+
+This step catches that case the way `04_join.py` cannot: geometrically,
+against the municipality's actual legal boundary rather than the census
+proxy for it. `03d_fetch_municipalities.py` downloads that boundary -
+DataBC's "Municipalities - Legally Defined Administrative Areas of BC"
+(`WHSE_LEGAL_ADMIN_BOUNDARIES.ABMS_MUNICIPALITIES_SP`), the same layer
+`03b_fetch_districts.py` already draws one row from - and every shortlisted
+place whose point falls inside one of its 160 polygons is dropped, unless
+`place_population_basis == "municipal"`, i.e. the place *is* that
+municipality.
+
+**This drops Indian reserves inside city limits on purpose.** A reserve
+enclosed by a municipality is still federal land under a separate government,
+not a neighbourhood of the city around it - the same reasoning that keeps
+Indigenous communities on the shortlist "whatever their size" would argue for
+keeping these too. The choice made here is the opposite: for this map, a
+place entirely inside a municipality's boundary reads as part of that
+municipality regardless of jurisdiction, so all 68 are cut. Reverting this
+call means skipping rows where `"indigenous" in selected_because`.
+
+Two things worth knowing:
+
+- **It cannot see the case it was named for.** A plain neighbourhood -
+  James Bay inside Victoria - is already gone by this point: its
+  dissemination area sits inside Victoria's census subdivision, so
+  `04_join.py` already marked it `is_nested` and it never became
+  `is_primary`, let alone reached the shortlist. This step exists for the one
+  case that pass structurally cannot catch: two subdivisions that are
+  siblings in the census hierarchy no matter how their real boundaries nest.
+- **It reads the shortlist without rewriting it.** `out/geoname_shortlist.csv`
+  still means exactly what `05_shortlist.py`'s own rule says; the further cut
+  lands in `out/geoname_shortlist_deduped.csv`, which is what the webapp and
+  everything downstream of "the shortlist" should read instead.
+  `out/excluded_within_municipality.csv` lists what was dropped and why, for
+  review without rerunning anything.
+
 ## Commute basins
 
 `06_basins.py` answers a different question from the rest of the pipeline:
@@ -441,8 +489,17 @@ everything.
 - `data/municipal_estimates.csv` — the workbook reduced to
   `csd_uid, sgc, name, area_type, year, population`, 162 municipalities ×
   15 years.
-- `out/geoname_shortlist.csv` — the 638 shortlisted rows, same columns plus
+- `out/geoname_shortlist.csv` — the shortlisted rows, same columns plus
   `selected_because`. See [The shortlist](#the-shortlist).
+- `out/geoname_shortlist_deduped.csv` — the shortlist with places nested
+  inside a municipality's legal boundary removed. See
+  [Dropping places nested inside a municipality](#dropping-places-nested-inside-a-municipality-05b_exclude_nested_municipalitiespy).
+  This is the file the webapp reads.
+- `out/excluded_within_municipality.csv` — every row that step dropped, and
+  which municipality's boundary caught it.
+- `data/municipalities.geojson` — the 160 municipalities from DataBC with
+  their official names and polygons. Not committed: `make municipalities`
+  re-fetches it.
 - `out/unclaimed_csds.csv` — the 16 census subdivisions no geoname landed in,
   i.e. the coverage gap seen from the census side.
 - `data/regional_districts.geojson` — the 29 areas from DataBC with their

@@ -23,6 +23,9 @@ CENSUS = os.path.join(HERE, "data", "census_population.csv")
 OUTPUT = os.path.join(HERE, "out", "geoname_population.csv")
 DISTRICTS = os.path.join(HERE, "data", "regional_districts.geojson")
 SHORTLIST = os.path.join(HERE, "out", "geoname_shortlist.csv")
+DEDUPED = os.path.join(HERE, "out", "geoname_shortlist_deduped.csv")
+MUNICIPALITIES = os.path.join(HERE, "data", "municipalities.geojson")
+EXCLUDED = os.path.join(HERE, "out", "excluded_within_municipality.csv")
 BASINS_CSV = os.path.join(HERE, "out", "geoname_basins.csv")
 SERVICE_JSON = os.path.join(HERE, "out", "service_areas.json")
 XLSX = os.path.join(os.path.dirname(HERE), "pop_municipal_subprov_areas.xlsx")
@@ -851,6 +854,72 @@ class TestShortlist(unittest.TestCase):
                              self.mod.is_indigenous(r, self.types))
             self.assertEqual("population>1000" in reasons,
                              self.mod.population(r) > 1000)
+
+
+@unittest.skipUnless(os.path.exists(SHORTLIST) and os.path.exists(MUNICIPALITIES),
+                     "no shortlist or municipal boundaries; run "
+                     "05_shortlist.py and 03d_fetch_municipalities.py")
+class TestExcludeNestedMunicipalities(unittest.TestCase):
+    """05b drops places geometrically inside a municipality's legal boundary,
+    unless the place is that municipality - the case 04_join.py's
+    census-hierarchy nesting cannot see, because a reserve and the city
+    around it are siblings in that hierarchy however their real boundaries
+    nest."""
+
+    @classmethod
+    def setUpClass(cls):
+        import csv as _csv
+        cls.mod = _load("05b_exclude_nested_municipalities.py", "exclude_nested")
+        with open(SHORTLIST, encoding="utf-8", newline="") as f:
+            cls.shortlist = list(_csv.DictReader(f))
+        from lib.spatial import PolygonIndex, load_geojson_polygons
+        cls.index = PolygonIndex(load_geojson_polygons(MUNICIPALITIES))
+        cls.nested = list(cls.mod.find_nested(cls.shortlist, cls.index))
+
+    def test_only_drops_rows_never_alters_them(self):
+        nested_ids = {r["geoname_id"] for r, _ in self.nested}
+        by_id = {r["geoname_id"]: r for r in self.shortlist}
+        for gid in nested_ids:
+            self.assertIn(gid, by_id)
+
+    def test_no_municipality_is_ever_flagged(self):
+        """A municipality's own point sits inside its own polygon by
+        construction; excluding it would be excluding it from itself."""
+        for row, _ in self.nested:
+            self.assertNotEqual(row["place_population_basis"], "municipal",
+                               row["bc_geographic_name"])
+
+    def test_a_reserve_enclosed_by_a_city_is_caught(self):
+        """Tsawwassen Lands sits entirely inside the City of Delta - the
+        reserve-inside-a-municipality case this step exists for."""
+        flagged = {r["bc_geographic_name"]: official
+                  for r, official in self.nested}
+        self.assertIn("Tsawwassen", flagged)
+        self.assertIn("Delta", flagged["Tsawwassen"])
+
+    def test_most_shortlisted_places_are_not_flagged(self):
+        """Only a place whose point falls inside a municipality's polygon is
+        dropped - the great majority of the shortlist is nowhere near one."""
+        self.assertGreater(len(self.shortlist), len(self.nested) * 5)
+
+    @unittest.skipUnless(os.path.exists(DEDUPED), "run 05b to produce it")
+    def test_deduped_output_matches_the_module(self):
+        import csv as _csv
+        with open(DEDUPED, encoding="utf-8", newline="") as f:
+            deduped = list(_csv.DictReader(f))
+        expected = {r["geoname_id"] for r in self.shortlist} - {
+            r["geoname_id"] for r, _ in self.nested}
+        self.assertEqual({r["geoname_id"] for r in deduped}, expected)
+
+    @unittest.skipUnless(os.path.exists(EXCLUDED), "run 05b to produce it")
+    def test_excluded_report_names_every_dropped_place(self):
+        import csv as _csv
+        with open(EXCLUDED, encoding="utf-8", newline="") as f:
+            excluded = list(_csv.DictReader(f))
+        self.assertEqual({r["geoname_id"] for r in excluded},
+                         {r["geoname_id"] for r, _ in self.nested})
+        for row in excluded:
+            self.assertTrue(row["within_municipality"])
 
 
 class TestXlsxReader(unittest.TestCase):

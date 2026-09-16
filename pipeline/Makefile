@@ -1,9 +1,9 @@
 # Geoname -> population pipeline. Pure stdlib Python 3.10+; no pip install.
 PY ?= python3
 
-.PHONY: all points census municipal boundaries districts province join shortlist basins basin-report test clean clean-all progress
+.PHONY: all points census municipal boundaries districts province municipalities join shortlist exclude-nested basins basin-report test clean clean-all progress
 
-all: points census municipal boundaries districts province join shortlist basins
+all: points census municipal boundaries districts province municipalities join shortlist exclude-nested basins
 
 points:            ## fetch a coordinate per Geonames.csv row (resumable)
 	$(PY) 01_fetch_points.py --workers 6
@@ -23,11 +23,17 @@ districts:         ## download BC's 29 regional districts from DataBC (~20 MB)
 province:          ## download BC's provincial boundary from DataBC (~1.5 MB)
 	$(PY) 03c_fetch_province.py
 
+municipalities:    ## download BC's 160 municipal boundaries from DataBC (~4 MB)
+	$(PY) 03d_fetch_municipalities.py
+
 join:              ## produce out/geoname_population.csv
 	$(PY) 04_join.py
 
 shortlist:         ## reduce to out/geoname_shortlist.csv (primary, non-trivial)
 	$(PY) 05_shortlist.py
+
+exclude-nested:    ## drop shortlisted places inside a municipality's legal boundary
+	$(PY) 05b_exclude_nested_municipalities.py
 
 basins:            ## group every place into a commute basin for the selector
 	$(PY) 06_basins.py

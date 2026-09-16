@@ -1,12 +1,12 @@
-/* CleanBC Communities map — reads pipeline/out/geoname_shortlist.csv and
-   puts every row on a MapLibre map. Hover for name / type / population;
+/* CleanBC Communities map — reads pipeline/out/geoname_shortlist_deduped.csv
+   and puts every row on a MapLibre map. Hover for name / type / population;
    click for the full row. No build step; MapLibre GL and the OpenFreeMap
    basemap are the only external pieces, and neither needs a key. */
 
 (function () {
   'use strict';
 
-  const CSV_URL = '../pipeline/out/geoname_shortlist.csv';
+  const CSV_URL = '../pipeline/out/geoname_shortlist_deduped.csv';
   const BOUNDARY_URL = '../pipeline/out/bc_boundary.geojson';
   const STYLE = {
     light: 'https://tiles.openfreemap.org/styles/positron',

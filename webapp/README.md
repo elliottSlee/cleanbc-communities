@@ -6,14 +6,15 @@ step.
 
 ## Map of the shortlist
 
-A static page that puts every row of `../pipeline/out/geoname_shortlist.csv` on a
-map. Hover a dot for the place's name, type and population; click it (or a row in
-the sidebar) for the whole record, including which geography the number describes.
+A static page that puts every row of
+`../pipeline/out/geoname_shortlist_deduped.csv` on a map. Hover a dot for the
+place's name, type and population; click it (or a row in the sidebar) for the
+whole record, including which geography the number describes.
 
 No build step and no dependencies to install — MapLibre GL and the Inter font load
 from CDNs, the basemap is OpenFreeMap. None of them needs an API key. The CSV is
-fetched live, so re-running `make shortlist` in `../pipeline` updates the map on
-the next reload.
+fetched live, so re-running `make shortlist exclude-nested` in `../pipeline`
+updates the map on the next reload.
 
 Both pages also draw the province's own outline, from
 `../pipeline/out/bc_boundary.geojson` (`make province` in `../pipeline`) — a
@@ -113,10 +114,10 @@ short one or the official one — narrows the tree to that district.
 - Service areas — <https://elliottslee.github.io/cleanbc-communities/webapp/service-areas.html>
 
 GitHub Pages serves the repository root of `main`, which is why the page's
-`../pipeline/out/geoname_shortlist.csv` resolves there exactly as it does under
-`http.server`. Two files at the root support this: `.nojekyll`, so Pages copies
-every file through verbatim instead of running Jekyll, and `index.html`, which
-forwards the bare URL here and carries the fragment across.
+`../pipeline/out/geoname_shortlist_deduped.csv` resolves there exactly as it
+does under `http.server`. Two files at the root support this: `.nojekyll`, so
+Pages copies every file through verbatim instead of running Jekyll, and
+`index.html`, which forwards the bare URL here and carries the fragment across.
 
 One difference from local use: the deployed pages read the **committed** data,
 so re-running `make shortlist` or `make basins` only changes them once you
