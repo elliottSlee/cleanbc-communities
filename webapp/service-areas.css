@@ -6,11 +6,8 @@
   --sidebar-w: 400px;
   --c-road: var(--c-other);
   --c-ferry: var(--c-indigenous);
-  --c-pass: var(--c-municipality);
-  --c-remote: #8b5cf6;
-}
-:root[data-theme="dark"], :root:not([data-theme="light"]) {
-  --c-remote: #a78bfa;
+  --c-pass: var(--c-road);
+  --c-remote: var(--c-road);
 }
 
 .sa-crumb {

@@ -824,7 +824,7 @@
   function buildLegend() {
     const legend = $('legend');
     legend.replaceChildren();
-    for (const k of ['road', 'ferry', 'pass', 'remote']) {
+    for (const k of ['ferry']) {
       const div = document.createElement('div');
       div.className = 'legend__item';
       div.innerHTML = `<span class="legend__swatch" style="background:${ACCESS_COLOR[k]}"></span>` +
